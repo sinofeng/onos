@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,8 @@ public class NullControlCommand extends AbstractShellCommand {
     String cmd = null;
 
     @Argument(index = 1, name = "topoShape",
-            description = "Topology shape: e.g. configured, linear, reroute, centipede, tree, spineleaf, mesh",
+            description = "Topology shape: e.g. configured, linear, reroute, centipede, tree, spineleaf, " +
+                    ", mesh, fattree",
             required = false, multiValued = false)
     String topoShape = null;
 

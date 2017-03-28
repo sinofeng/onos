@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2014-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
-
 import org.apache.commons.lang3.RandomUtils;
 import org.apache.felix.scr.annotations.Activate;
 import org.apache.felix.scr.annotations.Component;
@@ -29,7 +28,6 @@ import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.apache.felix.scr.annotations.Service;
 import org.onlab.packet.ChassisId;
 import org.onlab.util.KryoNamespace;
-import org.onlab.util.NewConcurrentHashMap;
 import org.onosproject.cluster.ClusterService;
 import org.onosproject.cluster.ControllerNode;
 import org.onosproject.cluster.NodeId;
@@ -48,6 +46,7 @@ import org.onosproject.net.MastershipRole;
 import org.onosproject.net.OchPort;
 import org.onosproject.net.OduCltPort;
 import org.onosproject.net.OmsPort;
+import org.onosproject.net.OtuPort;
 import org.onosproject.net.Port;
 import org.onosproject.net.PortNumber;
 import org.onosproject.net.device.DefaultPortStatistics;
@@ -59,18 +58,17 @@ import org.onosproject.net.device.DeviceStoreDelegate;
 import org.onosproject.net.device.OchPortDescription;
 import org.onosproject.net.device.OduCltPortDescription;
 import org.onosproject.net.device.OmsPortDescription;
+import org.onosproject.net.device.OtuPortDescription;
 import org.onosproject.net.device.PortDescription;
 import org.onosproject.net.device.PortStatistics;
 import org.onosproject.net.provider.ProviderId;
 import org.onosproject.store.AbstractStore;
 import org.onosproject.store.Timestamp;
 import org.onosproject.store.cluster.messaging.ClusterCommunicationService;
-import org.onosproject.store.cluster.messaging.ClusterMessage;
-import org.onosproject.store.cluster.messaging.ClusterMessageHandler;
 import org.onosproject.store.cluster.messaging.MessageSubject;
 import org.onosproject.store.impl.Timestamped;
 import org.onosproject.store.serializers.KryoNamespaces;
-import org.onosproject.store.serializers.KryoSerializer;
+import org.onosproject.store.serializers.StoreSerializer;
 import org.onosproject.store.serializers.custom.DistributedStoreSerializers;
 import org.onosproject.store.service.EventuallyConsistentMap;
 import org.onosproject.store.service.EventuallyConsistentMapEvent;
@@ -91,24 +89,39 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Predicates.notNull;
 import static com.google.common.base.Verify.verify;
+import static java.util.concurrent.Executors.newCachedThreadPool;
 import static java.util.concurrent.Executors.newSingleThreadScheduledExecutor;
-import static org.apache.commons.lang3.concurrent.ConcurrentUtils.createIfAbsentUnchecked;
 import static org.onlab.util.Tools.groupedThreads;
 import static org.onlab.util.Tools.minPriority;
 import static org.onosproject.cluster.ControllerNodeToNodeId.toNodeId;
 import static org.onosproject.net.DefaultAnnotations.merge;
-import static org.onosproject.net.device.DeviceEvent.Type.*;
-import static org.onosproject.store.device.impl.GossipDeviceStoreMessageSubjects.*;
+import static org.onosproject.net.device.DeviceEvent.Type.DEVICE_AVAILABILITY_CHANGED;
+import static org.onosproject.net.device.DeviceEvent.Type.PORT_ADDED;
+import static org.onosproject.net.device.DeviceEvent.Type.PORT_REMOVED;
+import static org.onosproject.net.device.DeviceEvent.Type.PORT_STATS_UPDATED;
+import static org.onosproject.net.device.DeviceEvent.Type.PORT_UPDATED;
+import static org.onosproject.store.device.impl.GossipDeviceStoreMessageSubjects.DEVICE_ADVERTISE;
+import static org.onosproject.store.device.impl.GossipDeviceStoreMessageSubjects.DEVICE_INJECTED;
+import static org.onosproject.store.device.impl.GossipDeviceStoreMessageSubjects.DEVICE_OFFLINE;
+import static org.onosproject.store.device.impl.GossipDeviceStoreMessageSubjects.DEVICE_REMOVED;
+import static org.onosproject.store.device.impl.GossipDeviceStoreMessageSubjects.DEVICE_REMOVE_REQ;
+import static org.onosproject.store.device.impl.GossipDeviceStoreMessageSubjects.DEVICE_UPDATE;
+import static org.onosproject.store.device.impl.GossipDeviceStoreMessageSubjects.PORT_INJECTED;
+import static org.onosproject.store.device.impl.GossipDeviceStoreMessageSubjects.PORT_STATUS_UPDATE;
+import static org.onosproject.store.device.impl.GossipDeviceStoreMessageSubjects.PORT_UPDATE;
 import static org.onosproject.store.service.EventuallyConsistentMapEvent.Type.PUT;
 import static org.slf4j.LoggerFactory.getLogger;
 
@@ -168,10 +181,7 @@ public class GossipDeviceStore
     protected MastershipTermService termService;
 
 
-    protected static final KryoSerializer SERIALIZER = new KryoSerializer() {
-        @Override
-        protected void setupKryoPool() {
-            serializerPool = KryoNamespace.newBuilder()
+    protected static final StoreSerializer SERIALIZER = StoreSerializer.using(KryoNamespace.newBuilder()
                     .register(DistributedStoreSerializers.STORE_COMMON)
                     .nextId(DistributedStoreSerializers.STORE_CUSTOM_BEGIN)
                     .register(new InternalDeviceEventSerializer(), InternalDeviceEvent.class)
@@ -184,9 +194,7 @@ public class GossipDeviceStore
                     .register(PortFragmentId.class)
                     .register(DeviceInjectedEvent.class)
                     .register(PortInjectedEvent.class)
-                    .build();
-        }
-    };
+                    .build("GossipDevice"));
 
     private ExecutorService executor;
 
@@ -198,34 +206,20 @@ public class GossipDeviceStore
 
     @Activate
     public void activate() {
-        executor = Executors.newCachedThreadPool(groupedThreads("onos/device", "fg-%d"));
+        executor = newCachedThreadPool(groupedThreads("onos/device", "fg-%d", log));
 
         backgroundExecutor =
-                newSingleThreadScheduledExecutor(minPriority(groupedThreads("onos/device", "bg-%d")));
+                newSingleThreadScheduledExecutor(minPriority(groupedThreads("onos/device", "bg-%d", log)));
 
-        clusterCommunicator.addSubscriber(
-                GossipDeviceStoreMessageSubjects.DEVICE_UPDATE, new InternalDeviceEventListener(), executor);
-        clusterCommunicator.addSubscriber(
-                GossipDeviceStoreMessageSubjects.DEVICE_OFFLINE,
-                new InternalDeviceOfflineEventListener(),
-                executor);
-        clusterCommunicator.addSubscriber(DEVICE_REMOVE_REQ,
-                                          new InternalRemoveRequestListener(),
-                                          executor);
-        clusterCommunicator.addSubscriber(
-                GossipDeviceStoreMessageSubjects.DEVICE_REMOVED, new InternalDeviceRemovedEventListener(), executor);
-        clusterCommunicator.addSubscriber(
-                GossipDeviceStoreMessageSubjects.PORT_UPDATE, new InternalPortEventListener(), executor);
-        clusterCommunicator.addSubscriber(
-                GossipDeviceStoreMessageSubjects.PORT_STATUS_UPDATE, new InternalPortStatusEventListener(), executor);
-        clusterCommunicator.addSubscriber(
-                GossipDeviceStoreMessageSubjects.DEVICE_ADVERTISE,
-                new InternalDeviceAdvertisementListener(),
-                backgroundExecutor);
-        clusterCommunicator.addSubscriber(
-                GossipDeviceStoreMessageSubjects.DEVICE_INJECTED, new DeviceInjectedEventListener(), executor);
-        clusterCommunicator.addSubscriber(
-                GossipDeviceStoreMessageSubjects.PORT_INJECTED, new PortInjectedEventListener(), executor);
+        addSubscriber(DEVICE_UPDATE, this::handleDeviceEvent);
+        addSubscriber(DEVICE_OFFLINE, this::handleDeviceOfflineEvent);
+        addSubscriber(DEVICE_REMOVE_REQ, this::handleRemoveRequest);
+        addSubscriber(DEVICE_REMOVED, this::handleDeviceRemovedEvent);
+        addSubscriber(PORT_UPDATE, this::handlePortEvent);
+        addSubscriber(PORT_STATUS_UPDATE, this::handlePortStatusEvent);
+        addSubscriber(DEVICE_ADVERTISE, this::handleDeviceAdvertisement);
+        addSubscriber(DEVICE_INJECTED, this::handleDeviceInjectedEvent);
+        addSubscriber(PORT_INJECTED, this::handlePortInjectedEvent);
 
         // start anti-entropy thread
         backgroundExecutor.scheduleAtFixedRate(new SendAdvertisementTask(),
@@ -234,10 +228,8 @@ public class GossipDeviceStore
         // Create a distributed map for port stats.
         KryoNamespace.Builder deviceDataSerializer = KryoNamespace.newBuilder()
                 .register(KryoNamespaces.API)
-                .register(DefaultPortStatistics.class)
-                .register(DeviceId.class)
-                .register(MultiValuedTimestamp.class)
-                .register(WallClockTimestamp.class);
+                .nextId(KryoNamespaces.BEGIN_USER_CUSTOM_ID)
+                .register(MultiValuedTimestamp.class);
 
         devicePortStats = storageService.<DeviceId, Map<PortNumber, PortStatistics>>eventuallyConsistentMapBuilder()
                 .withName("port-stats")
@@ -258,8 +250,13 @@ public class GossipDeviceStore
         log.info("Started");
     }
 
+    private <M> void addSubscriber(MessageSubject subject, Consumer<M> handler) {
+        clusterCommunicator.addSubscriber(subject, SERIALIZER::decode, handler, executor);
+    }
+
     @Deactivate
     public void deactivate() {
+        devicePortStats.removeListener(portStatsListener);
         devicePortStats.destroy();
         devicePortDeltaStats.destroy();
         executor.shutdownNow();
@@ -277,6 +274,15 @@ public class GossipDeviceStore
         devices.clear();
         devicePorts.clear();
         availableDevices.clear();
+        clusterCommunicator.removeSubscriber(DEVICE_UPDATE);
+        clusterCommunicator.removeSubscriber(DEVICE_OFFLINE);
+        clusterCommunicator.removeSubscriber(DEVICE_REMOVE_REQ);
+        clusterCommunicator.removeSubscriber(DEVICE_REMOVED);
+        clusterCommunicator.removeSubscriber(PORT_UPDATE);
+        clusterCommunicator.removeSubscriber(PORT_STATUS_UPDATE);
+        clusterCommunicator.removeSubscriber(DEVICE_ADVERTISE);
+        clusterCommunicator.removeSubscriber(DEVICE_INJECTED);
+        clusterCommunicator.removeSubscriber(PORT_INJECTED);
         log.info("Stopped");
     }
 
@@ -325,11 +331,16 @@ public class GossipDeviceStore
 
             if (deviceEvent != null) {
                 log.debug("Notifying peers of a device update topology event for providerId: {} and deviceId: {}",
-                         providerId, deviceId);
+                          providerId, deviceId);
                 notifyPeers(new InternalDeviceEvent(providerId, deviceId, mergedDesc));
             }
 
         } else {
+            // Only forward for ConfigProvider
+            // Forwarding was added as a workaround for ONOS-490
+            if (!providerId.scheme().equals("cfg")) {
+                return null;
+            }
             // FIXME Temporary hack for NPE (ONOS-1171).
             // Proper fix is to implement forwarding to master on ConfigProvider
             // redo ONOS-490
@@ -385,11 +396,16 @@ public class GossipDeviceStore
                 return null;
             }
             if (oldDevice == null) {
+                // REGISTER
+                if (!deltaDesc.value().isDefaultAvailable()) {
+                    return registerDevice(providerId, newDevice);
+                }
                 // ADD
                 return createDevice(providerId, newDevice, deltaDesc.timestamp());
             } else {
                 // UPDATE or ignore (no change or stale)
-                return updateDevice(providerId, oldDevice, newDevice, deltaDesc.timestamp());
+                return updateDevice(providerId, oldDevice, newDevice, deltaDesc.timestamp(),
+                                    deltaDesc.value().isDefaultAvailable());
             }
         }
     }
@@ -416,7 +432,8 @@ public class GossipDeviceStore
     // Guarded by deviceDescs value (=Device lock)
     private DeviceEvent updateDevice(ProviderId providerId,
                                      Device oldDevice,
-                                     Device newDevice, Timestamp newTimestamp) {
+                                     Device newDevice, Timestamp newTimestamp,
+                                     boolean forceAvailable) {
         // We allow only certain attributes to trigger update
         boolean propertiesChanged =
                 !Objects.equals(oldDevice.hwVersion(), newDevice.hwVersion()) ||
@@ -434,14 +451,13 @@ public class GossipDeviceStore
             if (!replaced) {
                 verify(replaced,
                        "Replacing devices cache failed. PID:%s [expected:%s, found:%s, new=%s]",
-                       providerId, oldDevice, devices.get(newDevice.id())
-                        , newDevice);
+                       providerId, oldDevice, devices.get(newDevice.id()), newDevice);
             }
 
             event = new DeviceEvent(DeviceEvent.Type.DEVICE_UPDATED, newDevice, null);
         }
 
-        if (!providerId.isAncillary()) {
+        if (!providerId.isAncillary() && forceAvailable) {
             boolean wasOnline = availableDevices.contains(newDevice.id());
             markOnline(newDevice.id(), newTimestamp);
             if (!wasOnline) {
@@ -449,6 +465,20 @@ public class GossipDeviceStore
             }
         }
         return event;
+    }
+
+    private DeviceEvent registerDevice(ProviderId providerId, Device newDevice) {
+        // update composed device cache
+        Device oldDevice = devices.putIfAbsent(newDevice.id(), newDevice);
+        verify(oldDevice == null,
+               "Unexpected Device in cache. PID:%s [old=%s, new=%s]",
+               providerId, oldDevice, newDevice);
+
+        if (!providerId.isAncillary()) {
+            markOffline(newDevice.id());
+        }
+
+        return new DeviceEvent(DeviceEvent.Type.DEVICE_ADDED, newDevice, null);
     }
 
     @Override
@@ -464,16 +494,18 @@ public class GossipDeviceStore
     }
 
     private DeviceEvent markOfflineInternal(DeviceId deviceId, Timestamp timestamp) {
-
         Map<ProviderId, DeviceDescriptions> providerDescs
                 = getOrCreateDeviceDescriptionsMap(deviceId);
 
         // locking device
         synchronized (providerDescs) {
-
             // accept off-line if given timestamp is newer than
             // the latest Timestamp from Primary provider
             DeviceDescriptions primDescs = getPrimaryDescriptions(providerDescs);
+            if (primDescs == null) {
+                return null;
+            }
+
             Timestamp lastTimestamp = primDescs.getLatestTimestamp();
             if (timestamp.compareTo(lastTimestamp) <= 0) {
                 // outdated event ignore
@@ -492,6 +524,25 @@ public class GossipDeviceStore
             }
             return null;
         }
+    }
+
+    @Override
+    public boolean markOnline(DeviceId deviceId) {
+        if (devices.containsKey(deviceId)) {
+            final Timestamp timestamp = deviceClockService.getTimestamp(deviceId);
+            Map<?, ?> deviceLock = getOrCreateDeviceDescriptionsMap(deviceId);
+            synchronized (deviceLock) {
+                if (markOnline(deviceId, timestamp)) {
+                    notifyDelegate(new DeviceEvent(DEVICE_AVAILABILITY_CHANGED, getDevice(deviceId), null));
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+        }
+        log.warn("Device {} does not exist in store", deviceId);
+        return false;
+
     }
 
     /**
@@ -579,6 +630,11 @@ public class GossipDeviceStore
             }
 
         } else {
+            // Only forward for ConfigProvider
+            // Forwarding was added as a workaround for ONOS-490
+            if (!providerId.scheme().equals("cfg")) {
+                return Collections.emptyList();
+            }
             // FIXME Temporary hack for NPE (ONOS-1171).
             // Proper fix is to implement forwarding to master on ConfigProvider
             // redo ONOS-490
@@ -606,7 +662,10 @@ public class GossipDeviceStore
                                                   Timestamped<List<PortDescription>> portDescriptions) {
 
         Device device = devices.get(deviceId);
-        checkArgument(device != null, DEVICE_NOT_FOUND, deviceId);
+        if (device == null) {
+            log.debug("Device is no longer valid: {}", deviceId);
+            return Collections.emptyList();
+        }
 
         Map<ProviderId, DeviceDescriptions> descsMap = deviceDescs.get(deviceId);
         checkArgument(descsMap != null, DEVICE_NOT_FOUND, deviceId);
@@ -677,6 +736,7 @@ public class GossipDeviceStore
     private DeviceEvent updatePort(Device device, Port oldPort,
                                    Port newPort,
                                    Map<PortNumber, Port> ports) {
+
         if (oldPort.isEnabled() != newPort.isEnabled() ||
                 oldPort.type() != newPort.type() ||
                 oldPort.portSpeed() != newPort.portSpeed() ||
@@ -685,6 +745,14 @@ public class GossipDeviceStore
             return new DeviceEvent(PORT_UPDATED, device, newPort);
         }
         return null;
+    }
+
+    private DeviceEvent removePort(DeviceId deviceId, PortNumber portNumber) {
+
+        log.info("Deleted port: " + deviceId.toString() + "/" + portNumber.toString());
+        Port deletedPort = devicePorts.get(deviceId).remove(portNumber);
+
+        return new DeviceEvent(PORT_REMOVED, getDevice(deviceId), deletedPort);
     }
 
     // Prunes the specified list of ports based on which ports are in the
@@ -709,8 +777,7 @@ public class GossipDeviceStore
     // Gets the map of ports for the specified device; if one does not already
     // exist, it creates and registers a new one.
     private ConcurrentMap<PortNumber, Port> getPortMap(DeviceId deviceId) {
-        return createIfAbsentUnchecked(devicePorts, deviceId,
-                                       NewConcurrentHashMap.<PortNumber, Port>ifNeeded());
+        return devicePorts.computeIfAbsent(deviceId, k -> new ConcurrentHashMap<>());
     }
 
     private Map<ProviderId, DeviceDescriptions> getOrCreateDeviceDescriptionsMap(
@@ -799,14 +866,16 @@ public class GossipDeviceStore
             final PortNumber number = deltaDesc.value().portNumber();
             final Port oldPort = ports.get(number);
             final Port newPort;
-
             final Timestamped<PortDescription> existingPortDesc = descs.getPortDesc(number);
+            boolean toDelete = false;
+
             if (existingPortDesc == null ||
                     deltaDesc.isNewer(existingPortDesc)) {
                 // on new port or valid update
                 // update description
                 descs.putPortDesc(deltaDesc);
                 newPort = composePort(device, number, descsMap);
+                toDelete = deltaDesc.value().isRemoved();
             } else {
                 // same or outdated event, ignored.
                 log.trace("ignore same or outdated {} >= {}", existingPortDesc, deltaDesc);
@@ -816,7 +885,7 @@ public class GossipDeviceStore
             if (oldPort == null) {
                 return createPort(device, newPort, ports);
             } else {
-                return updatePort(device, oldPort, newPort, ports);
+                return toDelete ? removePort(deviceId, number) : updatePort(device, oldPort, newPort, ports);
             }
         }
     }
@@ -828,6 +897,25 @@ public class GossipDeviceStore
             return Collections.emptyList();
         }
         return ImmutableList.copyOf(ports.values());
+    }
+
+    @Override
+    public Stream<PortDescription> getPortDescriptions(ProviderId pid,
+                                                       DeviceId deviceId) {
+        Map<ProviderId, DeviceDescriptions> descs = this.deviceDescs.get(deviceId);
+        if (descs == null) {
+            return null;
+        }
+        // inner-Map(=descs) is HashMap, thus requires synchronization even for reads
+        final Optional<DeviceDescriptions> devDescs;
+        synchronized (descs) {
+            devDescs = Optional.ofNullable(descs.get(pid));
+        }
+        // DeviceDescriptions is concurrent access-safe
+        return devDescs
+            .map(dd -> dd.getPortDescs().values().stream()
+                                             .map(Timestamped::value))
+            .orElse(Stream.empty());
     }
 
     @Override
@@ -907,6 +995,16 @@ public class GossipDeviceStore
     }
 
     @Override
+    public PortStatistics getStatisticsForPort(DeviceId deviceId, PortNumber portNumber) {
+        Map<PortNumber, PortStatistics> portStatsMap = devicePortStats.get(deviceId);
+        if (portStatsMap == null) {
+            return null;
+        }
+        PortStatistics portStats = portStatsMap.get(portNumber);
+        return portStats;
+    }
+
+    @Override
     public List<PortStatistics> getPortDeltaStatistics(DeviceId deviceId) {
         Map<PortNumber, PortStatistics> portStats = devicePortDeltaStats.get(deviceId);
         if (portStats == null) {
@@ -916,9 +1014,39 @@ public class GossipDeviceStore
     }
 
     @Override
+    public PortStatistics getDeltaStatisticsForPort(DeviceId deviceId, PortNumber portNumber) {
+        Map<PortNumber, PortStatistics> portStatsMap = devicePortDeltaStats.get(deviceId);
+        if (portStatsMap == null) {
+            return null;
+        }
+        PortStatistics portStats = portStatsMap.get(portNumber);
+        return portStats;
+    }
+
+    @Override
     public Port getPort(DeviceId deviceId, PortNumber portNumber) {
         Map<PortNumber, Port> ports = devicePorts.get(deviceId);
         return ports == null ? null : ports.get(portNumber);
+    }
+
+    @Override
+    public PortDescription getPortDescription(ProviderId pid,
+                                              DeviceId deviceId,
+                                              PortNumber portNumber) {
+        Map<ProviderId, DeviceDescriptions> descs = this.deviceDescs.get(deviceId);
+        if (descs == null) {
+            return null;
+        }
+        // inner-Map(=descs) is HashMap, thus requires synchronization even for reads
+        final Optional<DeviceDescriptions> devDescs;
+        synchronized (descs) {
+            devDescs = Optional.ofNullable(descs.get(pid));
+        }
+        // DeviceDescriptions is concurrent access-safe
+        return devDescs
+                .map(deviceDescriptions -> deviceDescriptions.getPortDesc(portNumber))
+                .map(Timestamped::value)
+                .orElse(null);
     }
 
     @Override
@@ -1074,18 +1202,45 @@ public class GossipDeviceStore
 
     private Port buildTypedPort(Device device, PortNumber number, boolean isEnabled,
                                  PortDescription description, Annotations annotations) {
+        // FIXME this switch need to go away once all ports are done.
         switch (description.type()) {
             case OMS:
-                OmsPortDescription omsDesc = (OmsPortDescription) description;
-                return new OmsPort(device, number, isEnabled, omsDesc.minFrequency(),
-                        omsDesc.maxFrequency(), omsDesc.grid(), annotations);
+                if (description instanceof OmsPortDescription) {
+                    // remove if-block once deprecation is complete
+                    OmsPortDescription omsDesc = (OmsPortDescription) description;
+                    return new OmsPort(device, number, isEnabled, omsDesc.minFrequency(),
+                            omsDesc.maxFrequency(), omsDesc.grid(), annotations);
+                }
+                // same as default
+                return new DefaultPort(device, number, isEnabled, description.type(),
+                                       description.portSpeed(), annotations);
             case OCH:
-                OchPortDescription ochDesc = (OchPortDescription) description;
-                return new OchPort(device, number, isEnabled, ochDesc.signalType(),
-                        ochDesc.isTunable(), ochDesc.lambda(), annotations);
+                if (description instanceof OchPortDescription) {
+                    // remove if-block once Och deprecation is complete
+                    OchPortDescription ochDesc = (OchPortDescription) description;
+                    return new OchPort(device, number, isEnabled, ochDesc.signalType(),
+                                       ochDesc.isTunable(), ochDesc.lambda(), annotations);
+                }
+                return new DefaultPort(device, number, isEnabled, description.type(),
+                                       description.portSpeed(), annotations);
             case ODUCLT:
-                OduCltPortDescription oduDesc = (OduCltPortDescription) description;
-                return new OduCltPort(device, number, isEnabled, oduDesc.signalType(), annotations);
+                if (description instanceof OduCltPortDescription) {
+                    // remove if-block once deprecation is complete
+                    OduCltPortDescription oduDesc = (OduCltPortDescription) description;
+                    return new OduCltPort(device, number, isEnabled, oduDesc.signalType(), annotations);
+                }
+                // same as default
+                return new DefaultPort(device, number, isEnabled, description.type(),
+                                       description.portSpeed(), annotations);
+            case OTU:
+                if (description instanceof OtuPortDescription) {
+                    // remove if-block once deprecation is complete
+                    OtuPortDescription otuDesc = (OtuPortDescription) description;
+                    return new OtuPort(device, number, isEnabled, otuDesc.signalType(), annotations);
+                }
+                // same as default
+                return new DefaultPort(device, number, isEnabled, description.type(),
+                                       description.portSpeed(), annotations);
             default:
                 return new DefaultPort(device, number, isEnabled, description.type(),
                         description.portSpeed(), annotations);
@@ -1178,7 +1333,7 @@ public class GossipDeviceStore
     }
 
     private void notifyPeers(InternalDeviceEvent event) {
-        broadcastMessage(GossipDeviceStoreMessageSubjects.DEVICE_UPDATE, event);
+        broadcastMessage(DEVICE_UPDATE, event);
     }
 
     private void notifyPeers(InternalDeviceOfflineEvent event) {
@@ -1199,7 +1354,7 @@ public class GossipDeviceStore
 
     private void notifyPeer(NodeId recipient, InternalDeviceEvent event) {
         try {
-            unicastMessage(recipient, GossipDeviceStoreMessageSubjects.DEVICE_UPDATE, event);
+            unicastMessage(recipient, DEVICE_UPDATE, event);
         } catch (IOException e) {
             log.error("Failed to send" + event + " to " + recipient, e);
         }
@@ -1283,7 +1438,7 @@ public class GossipDeviceStore
 
     /**
      * Responds to anti-entropy advertisement message.
-     * <p/>
+     * <p>
      * Notify sender about out-dated information using regular replication message.
      * Send back advertisement to sender if not in sync.
      *
@@ -1473,187 +1628,124 @@ public class GossipDeviceStore
         }
     }
 
-    private final class InternalDeviceEventListener
-            implements ClusterMessageHandler {
-        @Override
-        public void handle(ClusterMessage message) {
-            log.debug("Received device update event from peer: {}", message.sender());
-            InternalDeviceEvent event = SERIALIZER.decode(message.payload());
+    private void handleDeviceEvent(InternalDeviceEvent event) {
+        ProviderId providerId = event.providerId();
+        DeviceId deviceId = event.deviceId();
+        Timestamped<DeviceDescription> deviceDescription = event.deviceDescription();
 
-            ProviderId providerId = event.providerId();
-            DeviceId deviceId = event.deviceId();
-            Timestamped<DeviceDescription> deviceDescription = event.deviceDescription();
-
-            try {
-                notifyDelegateIfNotNull(createOrUpdateDeviceInternal(providerId, deviceId, deviceDescription));
-            } catch (Exception e) {
-                log.warn("Exception thrown handling device update", e);
-            }
+        try {
+            notifyDelegateIfNotNull(createOrUpdateDeviceInternal(providerId, deviceId,
+                    deviceDescription));
+        } catch (Exception e) {
+            log.warn("Exception thrown handling device update", e);
         }
     }
 
-    private final class InternalDeviceOfflineEventListener
-            implements ClusterMessageHandler {
-        @Override
-        public void handle(ClusterMessage message) {
-            log.debug("Received device offline event from peer: {}", message.sender());
-            InternalDeviceOfflineEvent event = SERIALIZER.decode(message.payload());
+    private void handleDeviceOfflineEvent(InternalDeviceOfflineEvent event) {
+        DeviceId deviceId = event.deviceId();
+        Timestamp timestamp = event.timestamp();
 
-            DeviceId deviceId = event.deviceId();
-            Timestamp timestamp = event.timestamp();
-
-            try {
-                notifyDelegateIfNotNull(markOfflineInternal(deviceId, timestamp));
-            } catch (Exception e) {
-                log.warn("Exception thrown handling device offline", e);
-            }
+        try {
+            notifyDelegateIfNotNull(markOfflineInternal(deviceId, timestamp));
+        } catch (Exception e) {
+            log.warn("Exception thrown handling device offline", e);
         }
     }
 
-    private final class InternalRemoveRequestListener
-            implements ClusterMessageHandler {
-        @Override
-        public void handle(ClusterMessage message) {
-            log.debug("Received device remove request from peer: {}", message.sender());
-            DeviceId did = SERIALIZER.decode(message.payload());
-
-            try {
-                removeDevice(did);
-            } catch (Exception e) {
-                log.warn("Exception thrown handling device remove", e);
-            }
+    private void handleRemoveRequest(DeviceId did) {
+        try {
+            removeDevice(did);
+        } catch (Exception e) {
+            log.warn("Exception thrown handling device remove", e);
         }
     }
 
-    private final class InternalDeviceRemovedEventListener
-            implements ClusterMessageHandler {
-        @Override
-        public void handle(ClusterMessage message) {
-            log.debug("Received device removed event from peer: {}", message.sender());
-            InternalDeviceRemovedEvent event = SERIALIZER.decode(message.payload());
+    private void handleDeviceRemovedEvent(InternalDeviceRemovedEvent event) {
+        DeviceId deviceId = event.deviceId();
+        Timestamp timestamp = event.timestamp();
 
-            DeviceId deviceId = event.deviceId();
-            Timestamp timestamp = event.timestamp();
-
-            try {
-                notifyDelegateIfNotNull(removeDeviceInternal(deviceId, timestamp));
-            } catch (Exception e) {
-                log.warn("Exception thrown handling device removed", e);
-            }
+        try {
+            notifyDelegateIfNotNull(removeDeviceInternal(deviceId, timestamp));
+        } catch (Exception e) {
+            log.warn("Exception thrown handling device removed", e);
         }
     }
 
-    private final class InternalPortEventListener
-            implements ClusterMessageHandler {
-        @Override
-        public void handle(ClusterMessage message) {
+    private void handlePortEvent(InternalPortEvent event) {
+        ProviderId providerId = event.providerId();
+        DeviceId deviceId = event.deviceId();
+        Timestamped<List<PortDescription>> portDescriptions = event.portDescriptions();
 
-            log.debug("Received port update event from peer: {}", message.sender());
-            InternalPortEvent event = SERIALIZER.decode(message.payload());
+        if (getDevice(deviceId) == null) {
+            log.debug("{} not found on this node yet, ignoring.", deviceId);
+            // Note: dropped information will be recovered by anti-entropy
+            return;
+        }
 
-            ProviderId providerId = event.providerId();
-            DeviceId deviceId = event.deviceId();
-            Timestamped<List<PortDescription>> portDescriptions = event.portDescriptions();
-
-            if (getDevice(deviceId) == null) {
-                log.debug("{} not found on this node yet, ignoring.", deviceId);
-                // Note: dropped information will be recovered by anti-entropy
-                return;
-            }
-
-            try {
-                notifyDelegate(updatePortsInternal(providerId, deviceId, portDescriptions));
-            } catch (Exception e) {
-                log.warn("Exception thrown handling port update", e);
-            }
+        try {
+            notifyDelegate(updatePortsInternal(providerId, deviceId, portDescriptions));
+        } catch (Exception e) {
+            log.warn("Exception thrown handling port update", e);
         }
     }
 
-    private final class InternalPortStatusEventListener
-            implements ClusterMessageHandler {
-        @Override
-        public void handle(ClusterMessage message) {
+    private void handlePortStatusEvent(InternalPortStatusEvent event) {
+        ProviderId providerId = event.providerId();
+        DeviceId deviceId = event.deviceId();
+        Timestamped<PortDescription> portDescription = event.portDescription();
 
-            log.debug("Received port status update event from peer: {}", message.sender());
-            InternalPortStatusEvent event = SERIALIZER.decode(message.payload());
+        if (getDevice(deviceId) == null) {
+            log.debug("{} not found on this node yet, ignoring.", deviceId);
+            // Note: dropped information will be recovered by anti-entropy
+            return;
+        }
 
-            ProviderId providerId = event.providerId();
-            DeviceId deviceId = event.deviceId();
-            Timestamped<PortDescription> portDescription = event.portDescription();
-
-            if (getDevice(deviceId) == null) {
-                log.debug("{} not found on this node yet, ignoring.", deviceId);
-                // Note: dropped information will be recovered by anti-entropy
-                return;
-            }
-
-            try {
-                notifyDelegateIfNotNull(updatePortStatusInternal(providerId, deviceId, portDescription));
-            } catch (Exception e) {
-                log.warn("Exception thrown handling port update", e);
-            }
+        try {
+            notifyDelegateIfNotNull(updatePortStatusInternal(providerId, deviceId, portDescription));
+        } catch (Exception e) {
+            log.warn("Exception thrown handling port update", e);
         }
     }
 
-    private final class InternalDeviceAdvertisementListener
-            implements ClusterMessageHandler {
-        @Override
-        public void handle(ClusterMessage message) {
-            log.trace("Received Device Anti-Entropy advertisement from peer: {}", message.sender());
-            DeviceAntiEntropyAdvertisement advertisement = SERIALIZER.decode(message.payload());
-            try {
-                handleAdvertisement(advertisement);
-            } catch (Exception e) {
-                log.warn("Exception thrown handling Device advertisements.", e);
-            }
+    private void handleDeviceAdvertisement(DeviceAntiEntropyAdvertisement advertisement) {
+        try {
+            handleAdvertisement(advertisement);
+        } catch (Exception e) {
+            log.warn("Exception thrown handling Device advertisements.", e);
         }
     }
 
-    private final class DeviceInjectedEventListener
-            implements ClusterMessageHandler {
-        @Override
-        public void handle(ClusterMessage message) {
-            log.debug("Received injected device event from peer: {}", message.sender());
-            DeviceInjectedEvent event = SERIALIZER.decode(message.payload());
+    private void handleDeviceInjectedEvent(DeviceInjectedEvent event) {
+        ProviderId providerId = event.providerId();
+        DeviceId deviceId = event.deviceId();
+        DeviceDescription deviceDescription = event.deviceDescription();
+        if (!deviceClockService.isTimestampAvailable(deviceId)) {
+            // workaround for ONOS-1208
+            log.warn("Not ready to accept update. Dropping {}", deviceDescription);
+            return;
+        }
 
-            ProviderId providerId = event.providerId();
-            DeviceId deviceId = event.deviceId();
-            DeviceDescription deviceDescription = event.deviceDescription();
-            if (!deviceClockService.isTimestampAvailable(deviceId)) {
-                // workaround for ONOS-1208
-                log.warn("Not ready to accept update. Dropping {}", deviceDescription);
-                return;
-            }
-
-            try {
-                createOrUpdateDevice(providerId, deviceId, deviceDescription);
-            } catch (Exception e) {
-                log.warn("Exception thrown handling device injected event.", e);
-            }
+        try {
+            createOrUpdateDevice(providerId, deviceId, deviceDescription);
+        } catch (Exception e) {
+            log.warn("Exception thrown handling device injected event.", e);
         }
     }
 
-    private final class PortInjectedEventListener
-            implements ClusterMessageHandler {
-        @Override
-        public void handle(ClusterMessage message) {
-            log.debug("Received injected port event from peer: {}", message.sender());
-            PortInjectedEvent event = SERIALIZER.decode(message.payload());
+    private void handlePortInjectedEvent(PortInjectedEvent event) {
+        ProviderId providerId = event.providerId();
+        DeviceId deviceId = event.deviceId();
+        List<PortDescription> portDescriptions = event.portDescriptions();
+        if (!deviceClockService.isTimestampAvailable(deviceId)) {
+            // workaround for ONOS-1208
+            log.warn("Not ready to accept update. Dropping {}", portDescriptions);
+            return;
+        }
 
-            ProviderId providerId = event.providerId();
-            DeviceId deviceId = event.deviceId();
-            List<PortDescription> portDescriptions = event.portDescriptions();
-            if (!deviceClockService.isTimestampAvailable(deviceId)) {
-                // workaround for ONOS-1208
-                log.warn("Not ready to accept update. Dropping {}", portDescriptions);
-                return;
-            }
-
-            try {
-                updatePorts(providerId, deviceId, portDescriptions);
-            } catch (Exception e) {
-                log.warn("Exception thrown handling port injected event.", e);
-            }
+        try {
+            updatePorts(providerId, deviceId, portDescriptions);
+        } catch (Exception e) {
+            log.warn("Exception thrown handling port injected event.", e);
         }
     }
 
@@ -1664,7 +1756,7 @@ public class GossipDeviceStore
             if (event.type() == PUT) {
                 Device device = devices.get(event.key());
                 if (device != null) {
-                    delegate.notify(new DeviceEvent(PORT_STATS_UPDATED, device));
+                    notifyDelegate(new DeviceEvent(PORT_STATS_UPDATED, device));
                 }
             }
         }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,8 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.onlab.junit.TestUtils;
+import org.onosproject.cfg.ComponentConfigAdapter;
 import org.onosproject.cluster.NodeId;
-import org.onosproject.core.DefaultGroupId;
 import org.onosproject.core.GroupId;
 import org.onosproject.mastership.MastershipServiceAdapter;
 import org.onosproject.net.DeviceId;
@@ -46,7 +46,7 @@ import org.onosproject.net.group.GroupOperation;
 import org.onosproject.net.group.GroupStore;
 import org.onosproject.net.group.GroupStoreDelegate;
 import org.onosproject.store.cluster.messaging.ClusterCommunicationServiceAdapter;
-import org.onosproject.store.service.EventuallyConsistentMap;
+import org.onosproject.store.service.ConsistentMap;
 import org.onosproject.store.service.TestStorageService;
 
 import com.google.common.collect.ImmutableList;
@@ -59,9 +59,11 @@ import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.Assert.assertEquals;
 import static org.onosproject.net.NetTestTools.APP_ID;
 import static org.onosproject.net.NetTestTools.did;
-
+import static org.onosproject.net.group.GroupDescription.Type.*;
+import static org.onosproject.net.group.GroupStore.UpdateType.*;
 /**
  * Distributed group store test.
  */
@@ -69,10 +71,12 @@ public class DistributedGroupStoreTest {
 
     DeviceId deviceId1 = did("dev1");
     DeviceId deviceId2 = did("dev2");
-    GroupId groupId1 = new DefaultGroupId(1);
-    GroupId groupId2 = new DefaultGroupId(2);
+    GroupId groupId1 = new GroupId(1);
+    GroupId groupId2 = new GroupId(2);
+    GroupId groupId3 = new GroupId(3);
     GroupKey groupKey1 = new DefaultGroupKey("abc".getBytes());
     GroupKey groupKey2 = new DefaultGroupKey("def".getBytes());
+    GroupKey groupKey3 = new DefaultGroupKey("ghi".getBytes());
 
     TrafficTreatment treatment =
             DefaultTrafficTreatment.emptyTreatment();
@@ -85,22 +89,29 @@ public class DistributedGroupStoreTest {
     GroupBuckets buckets = new GroupBuckets(ImmutableList.of(selectGroupBucket));
     GroupDescription groupDescription1 = new DefaultGroupDescription(
             deviceId1,
-            GroupDescription.Type.INDIRECT,
+            ALL,
             buckets,
             groupKey1,
             groupId1.id(),
             APP_ID);
     GroupDescription groupDescription2 = new DefaultGroupDescription(
             deviceId2,
-            GroupDescription.Type.INDIRECT,
+            INDIRECT,
             buckets,
             groupKey2,
             groupId2.id(),
             APP_ID);
+    GroupDescription groupDescription3 = new DefaultGroupDescription(
+            deviceId2,
+            INDIRECT,
+            buckets,
+            groupKey3,
+            groupId3.id(),
+            APP_ID);
 
     DistributedGroupStore groupStoreImpl;
     GroupStore groupStore;
-    EventuallyConsistentMap auditPendingReqQueue;
+    ConsistentMap auditPendingReqQueue;
 
     static class MasterOfAll extends MastershipServiceAdapter {
         @Override
@@ -120,6 +131,7 @@ public class DistributedGroupStoreTest {
         groupStoreImpl.storageService = new TestStorageService();
         groupStoreImpl.clusterCommunicator = new ClusterCommunicationServiceAdapter();
         groupStoreImpl.mastershipService = new MasterOfAll();
+        groupStoreImpl.cfgService = new ComponentConfigAdapter();
         groupStoreImpl.activate();
         groupStore = groupStoreImpl;
         auditPendingReqQueue =
@@ -202,6 +214,34 @@ public class DistributedGroupStoreTest {
     }
 
     /**
+     * Tests removing all groups on the given device.
+     */
+    @Test
+    public void testRemoveGroupOnDevice() throws Exception {
+        groupStore.deviceInitialAuditCompleted(deviceId1, true);
+        assertThat(groupStore.deviceInitialAuditStatus(deviceId1), is(true));
+        groupStore.deviceInitialAuditCompleted(deviceId2, true);
+        assertThat(groupStore.deviceInitialAuditStatus(deviceId2), is(true));
+
+        // Make sure the pending list starts out empty
+        assertThat(auditPendingReqQueue.size(), is(0));
+
+        groupStore.storeGroupDescription(groupDescription1);
+        groupStore.storeGroupDescription(groupDescription2);
+        groupStore.storeGroupDescription(groupDescription3);
+        assertThat(groupStore.getGroupCount(deviceId1), is(1));
+        assertThat(groupStore.getGroupCount(deviceId2), is(2));
+
+        groupStore.purgeGroupEntry(deviceId2);
+        assertThat(groupStore.getGroupCount(deviceId1), is(1));
+        assertThat(groupStore.getGroupCount(deviceId2), is(0));
+
+        groupStore.purgeGroupEntries();
+        assertThat(groupStore.getGroupCount(deviceId1), is(0));
+        assertThat(groupStore.getGroupCount(deviceId2), is(0));
+    }
+
+    /**
      * Tests adding and removing a group.
      */
     @Test
@@ -229,7 +269,7 @@ public class DistributedGroupStoreTest {
 
         GroupDescription groupDescription3 = new DefaultGroupDescription(
                 deviceId1,
-                GroupDescription.Type.SELECT,
+                SELECT,
                 buckets,
                 new DefaultGroupKey("aaa".getBytes()),
                 null,
@@ -285,12 +325,12 @@ public class DistributedGroupStoreTest {
 
         List<GroupEvent> eventsAfterAdds = delegate.eventsSeen();
         assertThat(eventsAfterAdds, hasSize(2));
-        eventsAfterAdds.stream().forEach(event -> assertThat(event.type(), is(GroupEvent.Type.GROUP_ADD_REQUESTED)));
+        eventsAfterAdds.forEach(event -> assertThat(event.type(), is(GroupEvent.Type.GROUP_ADD_REQUESTED)));
         delegate.resetEvents();
 
         GroupOperation opAdd =
                 GroupOperation.createAddGroupOperation(groupId1,
-                        GroupDescription.Type.INDIRECT,
+                        INDIRECT,
                         buckets);
         groupStore.groupOperationFailed(deviceId1, opAdd);
 
@@ -304,7 +344,7 @@ public class DistributedGroupStoreTest {
 
         GroupOperation opModify =
                 GroupOperation.createModifyGroupOperation(groupId2,
-                        GroupDescription.Type.INDIRECT,
+                        INDIRECT,
                         buckets);
         groupStore.groupOperationFailed(deviceId2, opModify);
         List<GroupEvent> eventsAfterModifyFailed = delegate.eventsSeen();
@@ -315,7 +355,7 @@ public class DistributedGroupStoreTest {
 
         GroupOperation opDelete =
                 GroupOperation.createDeleteGroupOperation(groupId2,
-                        GroupDescription.Type.INDIRECT);
+                        INDIRECT);
         groupStore.groupOperationFailed(deviceId2, opDelete);
         List<GroupEvent> eventsAfterDeleteFailed = delegate.eventsSeen();
         assertThat(eventsAfterDeleteFailed, hasSize(1));
@@ -354,7 +394,7 @@ public class DistributedGroupStoreTest {
     public void testUpdateGroupDescription() {
 
         GroupBuckets buckets =
-                new GroupBuckets(ImmutableList.of(failoverGroupBucket));
+                new GroupBuckets(ImmutableList.of(failoverGroupBucket, selectGroupBucket));
 
         groupStore.deviceInitialAuditCompleted(deviceId1, true);
         groupStore.storeGroupDescription(groupDescription1);
@@ -362,12 +402,47 @@ public class DistributedGroupStoreTest {
         GroupKey newKey = new DefaultGroupKey("123".getBytes());
         groupStore.updateGroupDescription(deviceId1,
                 groupKey1,
-                GroupStore.UpdateType.ADD,
+                ADD,
                 buckets,
                 newKey);
         Group group1 = groupStore.getGroup(deviceId1, groupId1);
         assertThat(group1.appCookie(), is(newKey));
         assertThat(group1.buckets().buckets(), hasSize(2));
+
+        short weight = 5;
+        GroupBucket selectGroupBucketWithWeight =
+                DefaultGroupBucket.createSelectGroupBucket(treatment, weight);
+        buckets = new GroupBuckets(ImmutableList.of(failoverGroupBucket,
+                selectGroupBucketWithWeight));
+
+        groupStore.updateGroupDescription(deviceId1,
+                newKey,
+                ADD,
+                buckets,
+                newKey);
+
+        group1 = groupStore.getGroup(deviceId1, groupId1);
+        assertThat(group1.appCookie(), is(newKey));
+        assertThat(group1.buckets().buckets(), hasSize(2));
+        for (GroupBucket bucket : group1.buckets().buckets()) {
+            if (bucket.type() == SELECT) {
+                assertEquals(weight, bucket.weight());
+            }
+        }
+
+        buckets = new GroupBuckets(ImmutableList.of(selectGroupBucketWithWeight));
+
+        groupStore.updateGroupDescription(deviceId1,
+                newKey,
+                SET,
+                buckets,
+                newKey);
+
+        group1 = groupStore.getGroup(deviceId1, groupId1);
+        assertThat(group1.appCookie(), is(newKey));
+        assertThat(group1.buckets().buckets(), hasSize(1));
+        GroupBucket onlyBucket = group1.buckets().buckets().iterator().next();
+        assertEquals(weight, onlyBucket.weight());
     }
 
     @Test

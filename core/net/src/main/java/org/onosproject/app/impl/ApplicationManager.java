@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,12 @@
  */
 package org.onosproject.app.impl;
 
-import com.google.common.collect.Maps;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Multimap;
+import com.google.common.util.concurrent.Uninterruptibles;
+
 import org.apache.felix.scr.annotations.Activate;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Deactivate;
@@ -39,11 +44,16 @@ import org.onosproject.security.SecurityUtil;
 import org.slf4j.Logger;
 
 import java.io.InputStream;
-import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static org.onosproject.app.ApplicationEvent.Type.*;
+import static org.onosproject.app.ApplicationEvent.Type.APP_ACTIVATED;
+import static org.onosproject.app.ApplicationEvent.Type.APP_DEACTIVATED;
+import static org.onosproject.app.ApplicationEvent.Type.APP_INSTALLED;
+import static org.onosproject.app.ApplicationEvent.Type.APP_UNINSTALLED;
 import static org.onosproject.security.AppGuard.checkPermission;
 import static org.onosproject.security.AppPermission.Type.APP_READ;
 import static org.slf4j.LoggerFactory.getLogger;
@@ -60,6 +70,7 @@ public class ApplicationManager
     private final Logger log = getLogger(getClass());
 
     private static final String APP_ID_NULL = "Application ID cannot be null";
+    private static final long DEFAULT_OPERATION_TIMEOUT_MILLIS = 2000;
 
     private final ApplicationStoreDelegate delegate = new InternalStoreDelegate();
 
@@ -69,19 +80,17 @@ public class ApplicationManager
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected FeaturesService featuresService;
 
-    private boolean initializing;
-
     // Application supplied hooks for pre-activation processing.
-    private final Map<String, Runnable> deactivateHooks = Maps.newConcurrentMap();
+    private final Multimap<String, Runnable> deactivateHooks = HashMultimap.create();
+    private final Cache<ApplicationId, CountDownLatch> pendingOperations =
+            CacheBuilder.newBuilder()
+                        .expireAfterWrite(DEFAULT_OPERATION_TIMEOUT_MILLIS * 2, TimeUnit.MILLISECONDS)
+                        .build();
 
     @Activate
     public void activate() {
         eventDispatcher.addSink(ApplicationEvent.class, listenerRegistry);
-
-        initializing = true;
         store.setDelegate(delegate);
-        initializing = false;
-
         log.info("Started");
     }
 
@@ -145,11 +154,7 @@ public class ApplicationManager
     @Override
     public void uninstall(ApplicationId appId) {
         checkNotNull(appId, APP_ID_NULL);
-        try {
-            store.remove(appId);
-        } catch (Exception e) {
-            log.warn("Unable to purge application directory for {}", appId.name());
-        }
+        updateStoreAndWaitForNotificationHandling(appId, store::remove);
     }
 
     @Override
@@ -158,13 +163,13 @@ public class ApplicationManager
         if (!SecurityUtil.isAppSecured(appId)) {
             return;
         }
-        store.activate(appId);
+        updateStoreAndWaitForNotificationHandling(appId, store::activate);
     }
 
     @Override
     public void deactivate(ApplicationId appId) {
         checkNotNull(appId, APP_ID_NULL);
-        store.deactivate(appId);
+        updateStoreAndWaitForNotificationHandling(appId, store::deactivate);
     }
 
     @Override
@@ -174,11 +179,26 @@ public class ApplicationManager
         store.setPermissions(appId, permissions);
     }
 
+    private void updateStoreAndWaitForNotificationHandling(ApplicationId appId,
+                                                           Consumer<ApplicationId> storeUpdateTask) {
+        CountDownLatch latch = new CountDownLatch(1);
+        try {
+            pendingOperations.put(appId, latch);
+            storeUpdateTask.accept(appId);
+        } catch (Exception e) {
+            pendingOperations.invalidate(appId);
+            latch.countDown();
+            log.warn("Failed to update store for {}", appId.name(), e);
+        }
+        Uninterruptibles.awaitUninterruptibly(latch, DEFAULT_OPERATION_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+    }
+
     private class InternalStoreDelegate implements ApplicationStoreDelegate {
         @Override
         public void notify(ApplicationEvent event) {
             ApplicationEvent.Type type = event.type();
             Application app = event.subject();
+            CountDownLatch latch = pendingOperations.getIfPresent(app.id());
             try {
                 if (type == APP_ACTIVATED) {
                     if (installAppFeatures(app)) {
@@ -202,9 +222,13 @@ public class ApplicationManager
 
                 }
                 post(event);
-
             } catch (Exception e) {
                 log.warn("Unable to perform operation on application " + app.id().name(), e);
+            } finally {
+                if (latch != null) {
+                    latch.countDown();
+                    pendingOperations.invalidate(app.id());
+                }
             }
         }
     }
@@ -262,7 +286,7 @@ public class ApplicationManager
     // Uninstalls all features that define the specified app.
     private synchronized boolean uninstallAppFeatures(Application app) throws Exception {
         boolean changed = false;
-        invokeHook(deactivateHooks.get(app.id().name()), app.id());
+        deactivateHooks.removeAll(app.id().name()).forEach(hook -> invokeHook(hook, app.id()));
         for (String name : app.features()) {
             Feature feature = featuresService.getFeature(name);
             if (feature != null && featuresService.isInstalled(feature)) {
@@ -276,6 +300,7 @@ public class ApplicationManager
     }
 
     // Invokes the specified function, if not null.
+    @java.lang.SuppressWarnings("squid:S1217") // We really do mean to call run()
     private void invokeHook(Runnable hook, ApplicationId appId) {
         if (hook != null) {
             try {

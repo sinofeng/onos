@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2014-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,18 +15,15 @@
  */
 package org.onosproject.cli.net;
 
-import static com.google.common.collect.Lists.newArrayList;
-
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.SortedMap;
-import java.util.TreeMap;
-
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.karaf.shell.commands.Argument;
 import org.apache.karaf.shell.commands.Command;
+import org.apache.karaf.shell.commands.Option;
+import org.onlab.util.StringFilter;
 import org.onosproject.cli.AbstractShellCommand;
-import org.onosproject.cli.Comparators;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.core.CoreService;
 import org.onosproject.net.Device;
@@ -35,11 +32,23 @@ import org.onosproject.net.device.DeviceService;
 import org.onosproject.net.flow.FlowEntry;
 import org.onosproject.net.flow.FlowEntry.FlowEntryState;
 import org.onosproject.net.flow.FlowRuleService;
+import org.onosproject.net.flow.TrafficTreatment;
+import org.onosproject.utils.Comparators;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.SortedMap;
+import java.util.TreeMap;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+
+import static com.google.common.collect.Lists.newArrayList;
+
 
 /**
  * Lists all currently-known flows.
@@ -48,33 +57,120 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
          description = "Lists all currently-known flows.")
 public class FlowsListCommand extends AbstractShellCommand {
 
+    private static final Predicate<FlowEntry> TRUE_PREDICATE = f -> true;
+
     public static final String ANY = "any";
 
-    private static final String FMT =
-            "   id=%s, state=%s, bytes=%s, packets=%s, duration=%s, priority=%s, tableId=%s appId=%s, payLoad=%s";
-    private static final String TFMT = "      treatment=%s";
-    private static final String SFMT = "      selector=%s";
+    private static final String LONG_FORMAT = "    id=%s, state=%s, bytes=%s, "
+            + "packets=%s, duration=%s, liveType=%s, priority=%s, tableId=%s, appId=%s, "
+            + "payLoad=%s, selector=%s, treatment=%s";
+
+    private static final String SHORT_FORMAT = "    %s, bytes=%s, packets=%s, "
+            + "table=%s, priority=%s, selector=%s, treatment=%s";
+
+    @Argument(index = 0, name = "state", description = "Flow Rule state",
+            required = false, multiValued = false)
+    String state = null;
 
     @Argument(index = 1, name = "uri", description = "Device ID",
               required = false, multiValued = false)
     String uri = null;
 
-    @Argument(index = 0, name = "state", description = "Flow Rule state",
-              required = false, multiValued = false)
-    String state = null;
+    @Argument(index = 2, name = "table", description = "Table ID",
+            required = false, multiValued = false)
+    String table = null;
+
+    @Option(name = "-s", aliases = "--short",
+            description = "Print more succinct output for each flow",
+            required = false, multiValued = false)
+    private boolean shortOutput = false;
+
+    @Option(name = "-n", aliases = "--no-core-flows",
+            description = "Suppress core flows from output",
+            required = false, multiValued = false)
+    private boolean suppressCoreOutput = false;
+
+    @Option(name = "-c", aliases = "--count",
+            description = "Print flow count only",
+            required = false, multiValued = false)
+    private boolean countOnly = false;
+
+    @Option(name = "-f", aliases = "--filter",
+            description = "Filter flows by specific keyword",
+            required = false, multiValued = true)
+    private List<String> filter = new ArrayList<>();
+
+    @Option(name = "-r", aliases = "--remove",
+            description = "Remove flows by specific keyword",
+            required = false, multiValued = false)
+    private String remove = null;
+
+    private Predicate<FlowEntry> predicate = TRUE_PREDICATE;
+
+    private StringFilter contentFilter;
 
     @Override
     protected void execute() {
         CoreService coreService = get(CoreService.class);
         DeviceService deviceService = get(DeviceService.class);
         FlowRuleService service = get(FlowRuleService.class);
-        SortedMap<Device, List<FlowEntry>> flows = getSortedFlows(deviceService, service);
+        contentFilter = new StringFilter(filter, StringFilter.Strategy.AND);
 
+        compilePredicate();
+
+        SortedMap<Device, List<FlowEntry>> flows = getSortedFlows(deviceService, service, coreService);
+
+        // Remove flows
+        if (remove != null) {
+            flows.values().forEach(flowList -> {
+                if (!remove.isEmpty()) {
+                    filter.add(remove);
+                    contentFilter = new StringFilter(filter, StringFilter.Strategy.AND);
+                }
+                if (!filter.isEmpty() || (remove != null && !remove.isEmpty())) {
+                    flowList = filterFlows(flowList);
+                    this.removeFlowsInteractive(flowList, service, coreService);
+                }
+            });
+            return;
+        }
+
+        // Show flows
         if (outputJson()) {
             print("%s", json(flows.keySet(), flows));
         } else {
             flows.forEach((device, flow) -> printFlows(device, flow, coreService));
         }
+    }
+
+    /**
+     * Removes the flows passed as argument after confirmation is provided
+     * for each of them.
+     * If no explicit confirmation is provided, the flow is not removed.
+     *
+     * @param flows       list of flows to remove
+     * @param flowService FlowRuleService object
+     * @param coreService CoreService object
+     */
+    public void removeFlowsInteractive(Iterable<FlowEntry> flows,
+                                       FlowRuleService flowService, CoreService coreService) {
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+        flows.forEach(flow -> {
+            ApplicationId appId = coreService.getAppId(flow.appId());
+            System.out.print(String.format("Id=%s, AppId=%s. Remove? [y/N]: ",
+                                           flow.id(), appId != null ? appId.name() : "<none>"));
+            String response;
+            try {
+                response = br.readLine();
+                response = response.trim().replace("\n", "");
+                if (response.equals("y")) {
+                    flowService.removeFlowRules(flow);
+                }
+            } catch (IOException e) {
+                response = "";
+            }
+            print(response);
+        });
     }
 
     /**
@@ -92,6 +188,22 @@ public class FlowsListCommand extends AbstractShellCommand {
             result.add(json(mapper, device, flows.get(device)));
         }
         return result;
+    }
+
+    /**
+     * Compiles a predicate to find matching flows based on the command
+     * arguments.
+     */
+    private void compilePredicate() {
+        if (state != null && !state.equals(ANY)) {
+            final FlowEntryState feState = FlowEntryState.valueOf(state.toUpperCase());
+            predicate = predicate.and(f -> f.state().equals(feState));
+        }
+
+        if (table != null) {
+            final int tableId = Integer.parseInt(table);
+            predicate = predicate.and(f -> f.tableId() == tableId);
+        }
     }
 
     // Produces JSON object with the flows of the given device.
@@ -113,16 +225,14 @@ public class FlowsListCommand extends AbstractShellCommand {
      *
      * @param deviceService device service
      * @param service flow rule service
+     * @param coreService core service
      * @return sorted device list
      */
     protected SortedMap<Device, List<FlowEntry>> getSortedFlows(DeviceService deviceService,
-                                                          FlowRuleService service) {
+                                                          FlowRuleService service, CoreService coreService) {
         SortedMap<Device, List<FlowEntry>> flows = new TreeMap<>(Comparators.ELEMENT_COMPARATOR);
         List<FlowEntry> rules;
-        FlowEntryState s = null;
-        if (state != null && !state.equals("any")) {
-            s = FlowEntryState.valueOf(state.toUpperCase());
-        }
+
         Iterable<Device> devices = null;
         if (uri == null) {
             devices = deviceService.getDevices();
@@ -131,21 +241,40 @@ public class FlowsListCommand extends AbstractShellCommand {
             devices = (dev == null) ? deviceService.getDevices()
                                     : Collections.singletonList(dev);
         }
+
         for (Device d : devices) {
-            if (s == null) {
+            if (predicate.equals(TRUE_PREDICATE)) {
                 rules = newArrayList(service.getFlowEntries(d.id()));
             } else {
                 rules = newArrayList();
                 for (FlowEntry f : service.getFlowEntries(d.id())) {
-                    if (f.state().equals(s)) {
+                    if (predicate.test(f)) {
                         rules.add(f);
                     }
                 }
             }
             rules.sort(Comparators.FLOW_RULE_COMPARATOR);
+
+            if (suppressCoreOutput) {
+                short coreAppId = coreService.getAppId("org.onosproject.core").id();
+                rules = rules.stream()
+                        .filter(f -> f.appId() != coreAppId)
+                        .collect(Collectors.toList());
+            }
             flows.put(d, rules);
         }
         return flows;
+    }
+
+    /**
+     * Filter a given list of flows based on the existing content filter.
+     *
+     * @param flows list of flows to filter
+     * @return further filtered list of flows
+     */
+    private List<FlowEntry> filterFlows(List<FlowEntry> flows) {
+        return flows.stream().
+                filter(f -> contentFilter.filter(f)).collect(Collectors.toList());
     }
 
     /**
@@ -157,19 +286,53 @@ public class FlowsListCommand extends AbstractShellCommand {
      */
     protected void printFlows(Device d, List<FlowEntry> flows,
                               CoreService coreService) {
-        boolean empty = flows == null || flows.isEmpty();
-        print("deviceId=%s, flowRuleCount=%d", d.id(), empty ? 0 : flows.size());
-        if (!empty) {
-            for (FlowEntry f : flows) {
+        List<FlowEntry> filteredFlows = filterFlows(flows);
+        boolean empty = filteredFlows == null || filteredFlows.isEmpty();
+        print("deviceId=%s, flowRuleCount=%d", d.id(), empty ? 0 : filteredFlows.size());
+        if (empty || countOnly) {
+            return;
+        }
+
+        for (FlowEntry f : filteredFlows) {
+            if (shortOutput) {
+                print(SHORT_FORMAT, f.state(), f.bytes(), f.packets(),
+                        f.tableId(), f.priority(), f.selector().criteria(),
+                        printTreatment(f.treatment()));
+            } else {
                 ApplicationId appId = coreService.getAppId(f.appId());
-                print(FMT, Long.toHexString(f.id().value()), f.state(),
-                      f.bytes(), f.packets(), f.life(), f.priority(), f.tableId(),
-                      appId != null ? appId.name() : "<none>",
-                      f.payLoad() == null ? null : f.payLoad().payLoad().toString());
-                print(SFMT, f.selector().criteria());
-                print(TFMT, f.treatment());
+                print(LONG_FORMAT, Long.toHexString(f.id().value()), f.state(),
+                        f.bytes(), f.packets(), f.life(), f.liveType(), f.priority(), f.tableId(),
+                        appId != null ? appId.name() : "<none>",
+                        f.payLoad() == null ? null : f.payLoad().payLoad().toString(),
+                        f.selector().criteria(), f.treatment());
             }
         }
     }
 
+    private String printTreatment(TrafficTreatment treatment) {
+        final String delimiter = ", ";
+        StringBuilder builder = new StringBuilder("[");
+        if (!treatment.immediate().isEmpty()) {
+            builder.append("immediate=" + treatment.immediate() + delimiter);
+        }
+        if (!treatment.deferred().isEmpty()) {
+            builder.append("deferred=" + treatment.deferred() + delimiter);
+        }
+        if (treatment.clearedDeferred()) {
+            builder.append("clearDeferred" + delimiter);
+        }
+        if (treatment.tableTransition() != null) {
+            builder.append("transition=" + treatment.tableTransition() + delimiter);
+        }
+        if (treatment.metered() != null) {
+            builder.append("meter=" + treatment.metered() + delimiter);
+        }
+        if (treatment.writeMetadata() != null) {
+            builder.append("metadata=" + treatment.writeMetadata() + delimiter);
+        }
+        // Chop off last delimiter
+        builder.replace(builder.length() - delimiter.length(), builder.length(), "");
+        builder.append("]");
+        return builder.toString();
+    }
 }

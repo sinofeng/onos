@@ -3,7 +3,7 @@
 '''
 Notes:
 
-This file contains classes and methods useful for integrating LincOE with Mininet, 
+This file contains classes and methods useful for integrating LincOE with Mininet,
 such as startOE, stopOE, LINCLink, and OpticalSwitch
 
 - $ONOS_ROOT ust be set
@@ -24,7 +24,7 @@ such as startOE, stopOE, LINCLink, and OpticalSwitch
         ------------
     - import LINCLink and OpticalSwitch from this module
     - import startOE and stopOE from this module
-    - create topology as you would a normal topology. when 
+    - create topology as you would a normal topology. when
       to an optical switch with topo.addLink, always specify cls=LINCLink
     - when creating an optical switch, use cls=OpticalSwitch in topo.addSwitch
     - for annotations on links and switches, a dictionary must be passed in as
@@ -41,13 +41,13 @@ we need to add another object to Mininet that contains all of the json object
 information for each switch. We would still subclass switch and link, but these
 classes would basically be dummy classes that store their own json information
 in the Mininet class object. We may also change the default switch class to add
-it's tap interfaces from lincOE during startup. The start() method for mininet would 
+it's tap interfaces from lincOE during startup. The start() method for mininet would
 grab all of the information from these switches and links, write configuration files
 for lincOE using the json module, start lincOE, then run the start methodfor each
 switch. The new start() method for each switch would parse through the sys.config
-file that was created and find the tap interface it needs to connect to, similar 
-to the findTap function that I currently use. After all of the controllers and 
-switches have been started, the new Mininet start() method should also push the 
+file that was created and find the tap interface it needs to connect to, similar
+to the findTap function that I currently use. After all of the controllers and
+switches have been started, the new Mininet start() method should also push the
 Topology configuration file to ONOS.
 
 '''
@@ -119,7 +119,7 @@ class LINCSwitch(OpticalSwitch):
                     if dpid:
                         dpids_to_ids[dpid.group().replace(':', '')] = switch_id
                         switch_id += 1
-            return dpids_to_ids     
+            return dpids_to_ids
         except:
             print "Error working with {}\nError: {}\n".format(sysConfig, sys.exc_info())
             fd.close()
@@ -197,9 +197,6 @@ class LINCSwitch(OpticalSwitch):
         self.configDict[ 'uri' ] = 'of:' + self.dpid
         self.configDict[ 'annotations' ] = self.annotations
         self.configDict[ 'annotations' ].setdefault('name', self.name)
-        self.configDict[ 'hw' ] = 'linc-oe'
-        self.configDict[ 'mfr' ] = 'Linc'
-        self.configDict[ 'mac' ] = 'ffffffffffff' + self.dpid[-2] + self.dpid[-1]
         self.configDict[ 'type' ] = self.switchType
         self.configDict[ 'ports' ] = []
         for port, intf in self.intfs.items():
@@ -290,8 +287,8 @@ class LINCSwitch(OpticalSwitch):
         with open("crossConnect.json", 'w') as fd:
             json.dump(crossConnectJSON, fd, indent=4, separators=(',', ': '))
         info('*** Pushing crossConnect.json to ONOS\n')
-        output = quietRun('%s/tools/test/bin/onos-topo-cfg %s\
-         Topology.json network/configuration/' % (self.onosDir, self.controllers[ 0 ].ip), shell=True)
+        output = quietRun('%s/tools/test/bin/onos-netcfg %s\
+         Topology.json' % (self.onosDir, self.controllers[ 0 ].ip), shell=True)
 
     def stop_oe(self):
         '''
@@ -331,10 +328,7 @@ class LINCSwitch(OpticalSwitch):
         "Returns the json configuration for a packet switch"
         configDict = {}
         configDict[ 'uri' ] = 'of:' + switch.dpid
-        configDict[ 'mac' ] = quietRun('cat /sys/class/net/%s/address' % switch.name).strip('\n').translate(None, ':')
-        configDict[ 'hw' ] = 'PK'  # FIXME what about OVS?
-        configDict[ 'mfr' ] = 'Linc'  # FIXME what about OVS?
-        configDict[ 'type' ] = 'SWITCH'  # FIXME what about OVS?
+        configDict[ 'type' ] = 'SWITCH'
         annotations = switch.params.get('annotations', {})
         annotations.setdefault('name', switch.name)
         configDict[ 'annotations' ] = annotations
@@ -394,7 +388,7 @@ class LINCSwitch(OpticalSwitch):
             json.dump(topoJSON, outfile, indent=4, separators=(',', ': '))
 
         info('*** Converting Topology.json to linc-oe format (TopoConfig.json) file (no oecfg) \n')
-        
+
         topoConfigJson = {}
 
         topoConfigJson["switchConfig"] = LINCSwitch.getSwitchConfig(net.switches)
@@ -461,21 +455,20 @@ class LINCSwitch(OpticalSwitch):
         opener.open(url)
         urllib2.install_opener(opener)
         # focus on just checking the state of devices we're interested in
-        devlist =  map( lambda x: x['uri'], devices )
+        # expected devices availability map
+        devMap =  dict.fromkeys(map( lambda x: x['uri'], devices ), False)
         while True:
             response = json.load(urllib2.urlopen(url))
             devs = response.get('devices')
 
-            # Wait for all devices to be registered. There is a chance that this is only a subgraph.
-            if (len(devices) == len(devs)):
+            # update availability map
+            for d in devs:
+                if devMap.has_key(d['id']):
+                    devMap[d['id']] = d['available']
 
-                # Wait for all devices to available
-                available = True
-                for d in devs:
-                    if d['id'] in devlist:
-                        available &= d['available']
-                if available:
-                    break
+            # Check if all devices we're interested became available
+            if all(devMap.viewvalues()):
+                break;
 
             if (time >= TIMEOUT):
                 error('***ERROR: ONOS did not register devices within %s seconds\n' % TIMEOUT)
@@ -486,7 +479,7 @@ class LINCSwitch(OpticalSwitch):
 
         info('*** Pushing Topology.json to ONOS\n')
         for index in range(len(LINCSwitch.controllers)):
-            output = quietRun('%s/tools/test/bin/onos-topo-cfg %s Topology.json network/configuration/ &'\
+            output = quietRun('%s/tools/test/bin/onos-netcfg %s Topology.json &'\
                                % (LINCSwitch.onosDir, LINCSwitch.controllers[ index ].ip), shell=True)
             # successful output contains the two characters '{}'
             # if there is more output than this, there is an issue
@@ -511,32 +504,32 @@ class LINCSwitch(OpticalSwitch):
         links = {}
         devices = {}
         ports = {}
+        BasicDevConfigKeys = ['name', 'type', 'latitude', 'longitude', 'allowed',
+                              'rackAddress', 'owner', 'driver', 'manufacturer',
+                              'hwVersion', 'swVersion', 'serial',
+                              'managementAddress']
 
         for switch in LINCSwitch.opticalJSON[ 'devices' ]:
-            # build device entries - keyed on uri (DPID) and config key 'basic'
+            # Build device entries - keyed on uri (DPID) and config key 'basic'
+            # 'type' is necessary field, else ONOS assumes it's a SWITCH
+            # Annotations hold switch name and latitude/longitude
             devDict = {}
-            devDict[ 'driver' ] = switch[ 'hw' ]
-            devDict[ 'mfr' ] = switch[ 'mfr' ]
-            devDict[ 'mac' ] = switch[ 'mac' ]
             devDict[ 'type' ] = switch[ 'type' ]
-            devDict.update(switch[ 'annotations' ])
-
+            devDict.update({k: v for k, v in switch[ 'annotations' ].iteritems() if k in BasicDevConfigKeys})
             devSubj = switch[ 'uri' ]
             devices[ devSubj ] = { 'basic': devDict }
 
-            # build port entries - keyed on "uri/port" and config key 'optical'
+            # Build port entries - keyed on "uri/port" and config key 'optical'
             for port in switch[ 'ports' ]:
                 portSubj = devSubj + '/' + str(port[ 'port' ])
                 ports[ portSubj ] = { 'optical': port }
 
-        # build link entries - keyed on "uri/port-uri/port" and config key 'basic'
+        # Build link entries - keyed on "uri/port-uri/port" and config key 'basic'
+        # Annotations hold the 'durable' field, which is necessary as long as we don't discover optical links
         for link in LINCSwitch.opticalJSON[ 'links' ]:
             linkDict = {}
             linkDict[ 'type' ] = link[ 'type' ]
-            # FIXME: Clean up unnecessary link/device attributes, then re-enable annotations
-            linkDict['durable'] = True
-            # linkDict.update(link[ 'annotations' ])
-
+            linkDict.update(link[ 'annotations' ])
             linkSubj = link[ 'src' ] + '-' + link[ 'dst' ]
             links[ linkSubj ] = { 'basic': linkDict }
 
@@ -549,7 +542,7 @@ class LINCSwitch(OpticalSwitch):
     @staticmethod
     def getSwitchConfig(switches):
         switchConfig = []
-        
+
         # Iterate through all switches and convert the ROADM switches to linc-oe format
         for switch in switches:
             if isinstance(switch, LINCSwitch):
@@ -576,7 +569,7 @@ class LINCSwitch(OpticalSwitch):
     @staticmethod
     def getLinkConfig(links):
         linkConfig = []
-        
+
         # Iterate through all non-edge links and convert them to linc-oe format
         for link in links:
             if isinstance(link, LINCLink):
@@ -591,7 +584,7 @@ class LINCSwitch(OpticalSwitch):
                 params = {}
                 params["nodeName1"] = link.intf1.node.name
                 params["nodeName2"] = link.intf2.node.name
-                
+
                 params["port1"] = link.port1
                 params["port2"]  = link.port2
 
@@ -619,7 +612,7 @@ class LINCSwitch(OpticalSwitch):
         for link in net.links:
             if isinstance(link, LINCLink) and link.isCrossConnect():
                 tapCount += 1
-                    
+
         while True:
             # tapCount can be less than the actual number of taps if the optical network
             # is a subgraph of a larger multidomain network.
@@ -652,7 +645,7 @@ class LINCSwitch(OpticalSwitch):
     @staticmethod
     def getTaps(path=None):
         '''
-        return list of all the tops in sys.config
+        return list of all the taps in sys.config
         '''
         if path is None:
             path = '%s/rel/linc/releases/1.0/sys.config' % LINCSwitch.lincDir
@@ -661,21 +654,6 @@ class LINCSwitch(OpticalSwitch):
         taps = re.findall('tap\d+', sys_data)
         fd.close()
         return taps
-
-    @staticmethod
-    def findUser():
-        "Try to return logged-in (usually non-root) user"
-        try:
-            # If we're running sudo
-            return os.environ[ 'SUDO_USER' ]
-        except:
-            try:
-                # Logged-in user (if we have a tty)
-                return quietRun('who am i').split()[ 0 ]
-            except:
-                # Give up and return effective user
-                return quietRun('whoami')
-
 
     @staticmethod
     def findTap(node, port, path=None):
@@ -747,7 +725,7 @@ class LINCLink(Link):
                 node1.crossConnects.append(self)
         else:
             cls1 = Intf
-            # bad hack to stop error message from appearing when we try to set up intf in a packet switch, 
+            # bad hack to stop error message from appearing when we try to set up intf in a packet switch,
             # and there is no interface there( because we do not run makeIntfPair ). This way, we just set lo up
             intfName1 = 'lo'
         if isinstance(node2, LINCSwitch):

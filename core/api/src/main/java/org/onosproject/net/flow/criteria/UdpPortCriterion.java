@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,14 +19,27 @@ import org.onlab.packet.TpPort;
 
 import java.util.Objects;
 
-import static com.google.common.base.MoreObjects.toStringHelper;
-
 /**
  * Implementation of UDP port criterion (16 bits unsigned integer).
  */
 public final class UdpPortCriterion implements Criterion {
     private final TpPort udpPort;
+    private final TpPort mask;
     private final Type type;
+
+    /**
+     * Constructor.
+     *
+     * @param udpPort the UDP port to match
+     * @param mask the mask for the UDP port
+     * @param type the match type. Should be either Type.UDP_SRC_MASKED or
+     * Type.UDP_DST_MASKED
+     */
+    UdpPortCriterion(TpPort udpPort, TpPort mask, Type type) {
+        this.udpPort = udpPort;
+        this.mask = mask;
+        this.type = type;
+    }
 
     /**
      * Constructor.
@@ -36,8 +49,7 @@ public final class UdpPortCriterion implements Criterion {
      * Type.UDP_DST
      */
     UdpPortCriterion(TpPort udpPort, Type type) {
-        this.udpPort = udpPort;
-        this.type = type;
+        this(udpPort, null, type);
     }
 
     @Override
@@ -54,15 +66,25 @@ public final class UdpPortCriterion implements Criterion {
         return this.udpPort;
     }
 
+    /**
+     * Gets the mask for the UDP port to match.
+     *
+     * @return the UDP port mask, null if not specified
+     */
+    public TpPort mask() {
+        return this.mask;
+    }
+
     @Override
     public String toString() {
-        return toStringHelper(type().toString())
-            .add("udpPort", udpPort).toString();
+        return (mask != null) ?
+                type().toString() + SEPARATOR + udpPort + "/" + mask :
+                type().toString() + SEPARATOR + udpPort;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(type().ordinal(), udpPort);
+        return Objects.hash(type.ordinal(), udpPort, mask);
     }
 
     @Override
@@ -73,6 +95,7 @@ public final class UdpPortCriterion implements Criterion {
         if (obj instanceof UdpPortCriterion) {
             UdpPortCriterion that = (UdpPortCriterion) obj;
             return Objects.equals(udpPort, that.udpPort) &&
+                    Objects.equals(mask, that.mask) &&
                     Objects.equals(type, that.type);
         }
         return false;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@
     'use strict';
 
     // injected refs
-    var $log, fs, wss, tov, tps, tts, ns;
+    var $log, fs, wss, tov, tps, tts, ns, sus, tpis;
 
     // api to topoForce
     var api;
@@ -31,14 +31,18 @@
        node()                         // get ref to D3 selection of nodes
        zoomingOrPanning( ev )
        updateDeviceColors( [dev] )
-       deselectLink()
+       deselectAllLinks()
      */
 
     // internal state
-    var hovered,                // the node over which the mouse is hovering
-        selections = {},        // currently selected nodes (by id)
-        selectOrder = [],       // the order in which we made selections
+    var hovered, selections, selectOrder, consumeClick;
+
+    function setInitialState () {
+        hovered = null;         // the node over which the mouse is hovering
+        selections = {};        // currently selected nodes (by id)
+        selectOrder = [];       // the order in which we made selections
         consumeClick = false;   // used to coordinate with SVG click handler
+    }
 
     // ==========================
 
@@ -102,12 +106,25 @@
                 }
             });
         }
-        if (!n) return;
+
+        if (obj && obj.class === 'link') {
+            if (selections[obj.key]) {
+                deselectObject(obj.key);
+            } else {
+                selections[obj.key] = { obj: obj, el: el };
+                selectOrder.push(obj.key);
+            }
+            updateDetail();
+            return;
+        }
+
+        if (!n) {
+            return;
+        }
 
         if (nodeEv) {
             consumeClick = true;
         }
-        api.deselectLink();
 
         if (ev.shiftKey && n.classed('selected')) {
             deselectObject(obj.id);
@@ -123,7 +140,17 @@
         selectOrder.push(obj.id);
 
         n.classed('selected', true);
-        api.updateDeviceColors(obj);
+        if (n.classed('device')) {
+            api.updateDeviceColors(obj);
+        }
+        updateDetail();
+    }
+
+    function reselect() {
+        selectOrder.forEach(function (id) {
+            var sel = d3.select('g#' + sus.safeId(id));
+            sel.classed('selected', true);
+        });
         updateDetail();
     }
 
@@ -182,6 +209,11 @@
 
     function singleSelect() {
         var data = getSel(0).obj;
+
+        //the link details are already taken care of in topoLink.js
+        if (data.class === 'link') {
+            return;
+        }
         requestDetails(data);
         // NOTE: detail panel is shown as a response to receiving
         //       a 'showDetails' event from the server. See 'showDetails'
@@ -274,8 +306,9 @@
     .factory('TopoSelectService',
         ['$log', 'FnService', 'WebSocketService', 'TopoOverlayService',
             'TopoPanelService', 'TopoTrafficService', 'NavService',
+            'SvgUtilService', 'TopoProtectedIntentsService',
 
-        function (_$log_, _fs_, _wss_, _tov_, _tps_, _tts_, _ns_) {
+        function (_$log_, _fs_, _wss_, _tov_, _tps_, _tts_, _ns_, _sus_, _tpis_) {
             $log = _$log_;
             fs = _fs_;
             wss = _wss_;
@@ -283,9 +316,14 @@
             tps = _tps_;
             tts = _tts_;
             ns = _ns_;
+            sus = _sus_;
+            tpis= _tpis_;
 
             function initSelect(_api_) {
                 api = _api_;
+                if (!selections) {
+                    setInitialState();
+                }
             }
 
             function destroySelect() { }
@@ -308,7 +346,8 @@
                 somethingSelected: somethingSelected,
 
                 clickConsumed: clickConsumed,
-                selectionContext: selectionContext
+                selectionContext: selectionContext,
+                reselect: reselect
             };
         }]);
 }());

@@ -5,7 +5,7 @@
     "meters"
   ],
   "properties": {
-    "groups": {
+    "meters": {
       "type": "array",
       "xml": {
         "name": "meters",
@@ -34,7 +34,7 @@
           },
           "appId": {
             "type": "string",
-            "example": "1"
+            "example": "org.onosproject.rest"
           },
           "deviceId": {
             "type": "string",

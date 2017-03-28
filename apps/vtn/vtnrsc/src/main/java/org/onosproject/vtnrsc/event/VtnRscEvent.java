@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,14 @@ public class VtnRscEvent
          * Signifies that floating IP has delete.
          */
         FLOATINGIP_DELETE,
+        /**
+         * Signifies that Floating IP has been bound.
+         */
+        FLOATINGIP_BIND,
+        /**
+         * Signifies that Floating IP has been unbound.
+         */
+        FLOATINGIP_UNBIND,
         /**
          * Signifies that router has create.
          */
@@ -99,7 +107,15 @@ public class VtnRscEvent
         /**
          * Signifies that port-chain has update.
          */
-        PORT_CHAIN_UPDATE
+        PORT_CHAIN_UPDATE,
+        /**
+         * Signifies that virtual-port has created.
+         */
+        VIRTUAL_PORT_PUT,
+        /**
+         * Signifies that virtual-port has removed.
+         */
+        VIRTUAL_PORT_DELETE
     }
 
     /**

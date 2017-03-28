@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,8 +27,10 @@ import com.google.common.util.concurrent.SettableFuture;
 import org.apache.felix.scr.annotations.Activate;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Deactivate;
+import org.apache.felix.scr.annotations.Modified;
+import org.apache.felix.scr.annotations.Property;
 import org.apache.felix.scr.annotations.Service;
-import org.onlab.util.NewConcurrentHashMap;
+import org.onlab.util.Tools;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.flow.CompletedBatchOperation;
 import org.onosproject.net.flow.DefaultFlowEntry;
@@ -48,10 +50,12 @@ import org.onosproject.net.flow.FlowRuleStoreDelegate;
 import org.onosproject.net.flow.StoredFlowEntry;
 import org.onosproject.net.flow.TableStatisticsEntry;
 import org.onosproject.store.AbstractStore;
+import org.osgi.service.component.ComponentContext;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Dictionary;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -61,7 +65,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.apache.commons.lang3.concurrent.ConcurrentUtils.createIfAbsentUnchecked;
 import static org.onosproject.net.flow.FlowRuleEvent.Type.RULE_REMOVED;
 import static org.slf4j.LoggerFactory.getLogger;
 
@@ -87,8 +90,10 @@ public class SimpleFlowRuleStore
 
     private final AtomicInteger localBatchIdGen = new AtomicInteger();
 
-    // TODO: make this configurable
-    private int pendingFutureTimeoutMinutes = 5;
+    private static final int DEFAULT_PENDING_FUTURE_TIMEOUT_MINUTES = 5;
+    @Property(name = "pendingFutureTimeoutMinutes", intValue = DEFAULT_PENDING_FUTURE_TIMEOUT_MINUTES,
+            label = "Expiration time after an entry is created that it should be automatically removed")
+    private int pendingFutureTimeoutMinutes = DEFAULT_PENDING_FUTURE_TIMEOUT_MINUTES;
 
     private Cache<Integer, SettableFuture<CompletedBatchOperation>> pendingFutures =
             CacheBuilder.newBuilder()
@@ -108,6 +113,21 @@ public class SimpleFlowRuleStore
         log.info("Stopped");
     }
 
+    @Modified
+    public void modified(ComponentContext context) {
+
+        readComponentConfiguration(context);
+
+        // Reset Cache and copy all.
+        Cache<Integer, SettableFuture<CompletedBatchOperation>> prevFutures = pendingFutures;
+        pendingFutures = CacheBuilder.newBuilder()
+                .expireAfterWrite(pendingFutureTimeoutMinutes, TimeUnit.MINUTES)
+                .removalListener(new TimeoutFuture())
+                .build();
+
+        pendingFutures.putAll(prevFutures.asMap());
+    }
+
 
     @Override
     public int getFlowRuleCount() {
@@ -120,8 +140,25 @@ public class SimpleFlowRuleStore
         return sum;
     }
 
-    private static NewConcurrentHashMap<FlowId, List<StoredFlowEntry>> lazyEmptyFlowTable() {
-        return NewConcurrentHashMap.<FlowId, List<StoredFlowEntry>>ifNeeded();
+    /**
+     * Extracts properties from the component configuration context.
+     *
+     * @param context the component context
+     */
+    private void readComponentConfiguration(ComponentContext context) {
+        Dictionary<?, ?> properties = context.getProperties();
+
+        Integer newPendingFutureTimeoutMinutes =
+                Tools.getIntegerProperty(properties, "pendingFutureTimeoutMinutes");
+        if (newPendingFutureTimeoutMinutes == null) {
+            pendingFutureTimeoutMinutes = DEFAULT_PENDING_FUTURE_TIMEOUT_MINUTES;
+            log.info("Pending future timeout is not configured, " +
+                             "using current value of {}", pendingFutureTimeoutMinutes);
+        } else {
+            pendingFutureTimeoutMinutes = newPendingFutureTimeoutMinutes;
+            log.info("Configured. Pending future timeout is configured to {}",
+                     pendingFutureTimeoutMinutes);
+        }
     }
 
     /**
@@ -131,8 +168,7 @@ public class SimpleFlowRuleStore
      * @return Map representing Flow Table of given device.
      */
     private ConcurrentMap<FlowId, List<StoredFlowEntry>> getFlowTable(DeviceId deviceId) {
-        return createIfAbsentUnchecked(flowEntries,
-                                       deviceId, lazyEmptyFlowTable());
+        return flowEntries.computeIfAbsent(deviceId, k -> new ConcurrentHashMap<>());
     }
 
     private List<StoredFlowEntry> getFlowEntries(DeviceId deviceId, FlowId flowId) {
@@ -258,6 +294,33 @@ public class SimpleFlowRuleStore
     }
 
     @Override
+    public FlowRuleEvent pendingFlowRule(FlowEntry rule) {
+        List<StoredFlowEntry> entries = getFlowEntries(rule.deviceId(), rule.id());
+        synchronized (entries) {
+            for (StoredFlowEntry entry : entries) {
+                if (entry.equals(rule) &&
+                        entry.state() != FlowEntryState.PENDING_ADD) {
+                    synchronized (entry) {
+                        entry.setState(FlowEntryState.PENDING_ADD);
+                        return new FlowRuleEvent(Type.RULE_UPDATED, rule);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public void purgeFlowRule(DeviceId deviceId) {
+        flowEntries.remove(deviceId);
+    }
+
+    @Override
+    public void purgeFlowRules() {
+        flowEntries.clear();
+    }
+
+    @Override
     public void storeBatch(
             FlowRuleBatchOperation operation) {
         List<FlowRuleBatchEntry> toAdd = new ArrayList<>();
@@ -311,19 +374,6 @@ public class SimpleFlowRuleStore
         notifyDelegate(event);
     }
 
-    private static final class TimeoutFuture
-        implements RemovalListener<Integer, SettableFuture<CompletedBatchOperation>> {
-        @Override
-        public void onRemoval(RemovalNotification<Integer, SettableFuture<CompletedBatchOperation>> notification) {
-            // wrapping in ExecutionException to support Future.get
-            if (notification.wasEvicted()) {
-                notification.getValue()
-                    .setException(new ExecutionException("Timed out",
-                                                     new TimeoutException()));
-            }
-        }
-    }
-
     @Override
     public FlowRuleEvent updateTableStatistics(DeviceId deviceId,
                                                List<TableStatisticsEntry> tableStats) {
@@ -338,5 +388,18 @@ public class SimpleFlowRuleStore
             return Collections.emptyList();
         }
         return ImmutableList.copyOf(tableStats);
+    }
+
+    private static final class TimeoutFuture
+            implements RemovalListener<Integer, SettableFuture<CompletedBatchOperation>> {
+        @Override
+        public void onRemoval(RemovalNotification<Integer, SettableFuture<CompletedBatchOperation>> notification) {
+            // wrapping in ExecutionException to support Future.get
+            if (notification.wasEvicted()) {
+                notification.getValue()
+                        .setException(new ExecutionException("Timed out",
+                                                             new TimeoutException()));
+            }
+        }
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,19 +15,19 @@
  */
 package org.onosproject.bgp.controller.impl;
 
-import java.util.Comparator;
-import java.util.List;
-import java.util.ListIterator;
-
 import org.onosproject.bgpio.protocol.linkstate.PathAttrNlriDetailsLocalRib;
 import org.onosproject.bgpio.types.AsPath;
 import org.onosproject.bgpio.types.BgpValueType;
 import org.onosproject.bgpio.types.LocalPref;
 import org.onosproject.bgpio.types.Med;
 import org.onosproject.bgpio.types.Origin;
-import org.onosproject.bgpio.types.Origin.ORIGINTYPE;
+import org.onosproject.bgpio.types.Origin.OriginType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Comparator;
+import java.util.List;
+import java.util.ListIterator;
 
 /**
  * Implementation of BGP best path Selection process.
@@ -70,7 +70,7 @@ public final class BgpSelectionAlgo implements Comparator<PathAttrNlriDetailsLoc
         if (!obj1Aspath.equals(obj2Aspath)) {
             Integer obj1Size = countASSize(obj1Aspath);
             Integer obj2Size = countASSize(obj2Aspath);
-            if (obj1Size != obj2Size) {
+            if (!obj1Size.equals(obj2Size)) {
                 return compareAsPath(obj1Size, obj2Size);
             }
         }
@@ -108,7 +108,7 @@ public final class BgpSelectionAlgo implements Comparator<PathAttrNlriDetailsLoc
      *
      * @param obj1Size object1 AS count
      * @param obj2Size object2 AS count
-     * @return
+     * @return object with shortest AsPath
      */
     int compareAsPath(Integer obj1Size, Integer obj2Size) {
             return obj1Size.compareTo(obj2Size);
@@ -122,13 +122,13 @@ public final class BgpSelectionAlgo implements Comparator<PathAttrNlriDetailsLoc
      * @return object with lowest origin value
      */
     int compareOrigin(Origin obj1Origin, Origin obj2Origin) {
-        if (obj1Origin.origin() == ORIGINTYPE.IGP) {
+        if (obj1Origin.origin() == OriginType.IGP) {
             return 1;
         }
-        if (obj2Origin.origin() == ORIGINTYPE.IGP) {
+        if (obj2Origin.origin() == OriginType.IGP) {
             return -1;
         }
-        if (obj1Origin.origin() == ORIGINTYPE.EGP) {
+        if (obj1Origin.origin() == OriginType.EGP) {
             return 1;
         } else {
             return -1;

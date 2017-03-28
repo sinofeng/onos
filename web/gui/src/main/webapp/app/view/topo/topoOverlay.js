@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -108,9 +108,29 @@
         $log.debug(tos + 'registered overlay: ' + id, overlay);
     }
 
-    // returns the list of overlay identifiers
+    // Returns the list of overlay identifiers.
     function list() {
         return d3.map(overlays).keys();
+    }
+
+    // Returns an array containing overlays that implement the showIntent and
+    // acceptIntent callbacks, and that accept the given intent type
+    function overlaysAcceptingIntents(intentType) {
+        var result = [];
+        angular.forEach(overlays, function (ov) {
+            var ovid = ov.overlayId,
+                hooks = fs.isO(ov.hooks) || {},
+                aicb = fs.isF(hooks.acceptIntent),
+                sicb = fs.isF(hooks.showIntent);
+
+            if (sicb && aicb && aicb(intentType)) {
+                result.push({
+                    id: ovid,
+                    tt: ov.tooltip || '%' + ovid + '%'
+                });
+            }
+        });
+        return result;
     }
 
     // add a radio button for each registered overlay
@@ -181,6 +201,11 @@
             gid: 'groupTable',
             tt: 'Show Group View for this Device',
             path: 'group'
+        },
+        showMeterView: {
+            gid: 'meterTable',
+            tt: 'Show Meter View for this Device',
+            path: 'meter'
         }
     };
 
@@ -272,6 +297,19 @@
         cb && cb();
     }
 
+    // Temporary function to allow overlays to modify link detail data
+    // in the client. (In the near future, this will be done on the server).
+    function modifyLinkDataHook(data, extra) {
+        var cb = _hook('modifylinkdata');
+        return cb && extra ? cb(data, extra) : data;
+    }
+
+    // Request from Intent View to visualize an intent on the topo view
+    function showIntentHook(intentData) {
+        var cb = _hook('showIntent');
+        return cb && cb(intentData);
+    }
+
     // === -----------------------------------------------------
     //  Event (from server) Handlers
 
@@ -328,12 +366,14 @@
             var hdata = api.findNodeById(host.id),
                 badgeData = host.badge || null;
 
-            if (hdata && !hdata.el.empty()) {
+            if (hdata && hdata.el && !hdata.el.empty()) {
                 hdata.badge = badgeData;
                 if (!host.subdue) {
                     api.unsupNode(hdata.id, less);
                 }
                 // TODO: further highlighting?
+            } else {
+                $log.warn('HILITE: no host element:', host.id);
             }
         });
 
@@ -341,12 +381,14 @@
             var ddata = api.findNodeById(device.id),
                 badgeData = device.badge || null;
 
-            if (ddata && !ddata.el.empty()) {
+            if (ddata && ddata.el && !ddata.el.empty()) {
                 ddata.badge = badgeData;
                 if (!device.subdue) {
                     api.unsupNode(ddata.id, less);
                 }
                 // TODO: further highlighting?
+            } else {
+                $log.warn('HILITE: no device element:', device.id);
             }
         });
 
@@ -354,7 +396,8 @@
             var ldata = api.findLinkById(link.id),
                 lab = link.label,
                 units, portcls, magnitude;
-            if (ldata && !ldata.el.empty()) {
+
+            if (ldata && ldata.el && !ldata.el.empty()) {
                 if (!link.subdue) {
                     api.unsupLink(ldata.key, less);
                 }
@@ -376,6 +419,8 @@
                     }
                     ldata.el.classed(portcls, true);
                 }
+            } else {
+                $log.warn('HILITE: no link element:', link.id);
             }
         });
 
@@ -403,6 +448,7 @@
                 register: register,
                 setApi: setApi,
                 list: list,
+                overlaysAcceptingIntents: overlaysAcceptingIntents,
                 augmentRbset: augmentRbset,
                 mkGlyphId: mkGlyphId,
                 tbSelection: tbSelection,
@@ -415,7 +461,9 @@
                     singleSelect: singleSelectHook,
                     multiSelect: multiSelectHook,
                     mouseOver: mouseOverHook,
-                    mouseOut: mouseOutHook
+                    mouseOut: mouseOutHook,
+                    modifyLinkData: modifyLinkDataHook,
+                    showIntent: showIntentHook
                 },
 
                 showHighlights: showHighlights

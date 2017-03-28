@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.core.CoreService;
+import org.onosproject.incubator.component.ComponentService;
 import org.onosproject.incubator.net.intf.InterfaceService;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.config.NetworkConfigService;
@@ -36,6 +37,8 @@ import org.onosproject.routing.config.RoutingConfigurationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -72,6 +75,9 @@ public class BgpRouter {
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected DeviceService deviceService;
 
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected ComponentService componentService;
+
     private ApplicationId appId;
 
     // Device id of control-plane switch (OVS) connected to BGP Speaker - should be
@@ -85,9 +91,17 @@ public class BgpRouter {
     private DeviceListener deviceListener;
     private IcmpHandler icmpHandler;
 
+    private static List<String> components = new ArrayList<>();
+    static {
+        components.add("org.onosproject.routing.bgp.BgpSessionManager");
+        components.add("org.onosproject.routing.impl.BgpSpeakerNeighbourHandler");
+    }
+
     @Activate
     protected void activate() {
         appId = coreService.registerApplication(BGP_ROUTER_APP);
+
+        components.forEach(name -> componentService.activate(appId, name));
 
         ApplicationId routerAppId = coreService.getAppId(RoutingService.ROUTER_APP_ID);
         BgpConfig bgpConfig =
@@ -123,6 +137,8 @@ public class BgpRouter {
 
     @Deactivate
     protected void deactivate() {
+        components.forEach(name -> componentService.deactivate(appId, name));
+
         connectivityManager.stop();
         icmpHandler.stop();
         deviceService.removeListener(deviceListener);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,6 +41,13 @@ public interface MulticastRouteService
      * @param route a multicast route
      */
     void remove(McastRoute route);
+
+    /**
+     * Gets all multicast routes in the system.
+     *
+     * @return set of multicast routes
+     */
+    Set<McastRoute> getRoutes();
 
     /**
      * Adds a source connection to the route from where the

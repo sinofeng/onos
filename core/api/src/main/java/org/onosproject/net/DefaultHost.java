@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Open Networking Laboratory
+ * Copyright 2014-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,7 @@ public class DefaultHost extends AbstractElement implements Host {
     private final VlanId vlan;
     private final HostLocation location;
     private final Set<IpAddress> ips;
+    private final boolean configured;
 
     /**
      * Creates an end-station host using the supplied information.
@@ -51,11 +52,30 @@ public class DefaultHost extends AbstractElement implements Host {
     public DefaultHost(ProviderId providerId, HostId id, MacAddress mac,
                        VlanId vlan, HostLocation location, Set<IpAddress> ips,
                        Annotations... annotations) {
+        this(providerId, id, mac, vlan, location, ips, false, annotations);
+    }
+
+    /**
+     * Creates an end-station host using the supplied information.
+     *
+     * @param providerId  provider identity
+     * @param id          host identifier
+     * @param mac         host MAC address
+     * @param vlan        host VLAN identifier
+     * @param location    host location
+     * @param ips         host IP addresses
+     * @param configured  true if configured via NetworkConfiguration
+     * @param annotations optional key/value annotations
+     */
+    public DefaultHost(ProviderId providerId, HostId id, MacAddress mac,
+                       VlanId vlan, HostLocation location, Set<IpAddress> ips,
+                       boolean configured, Annotations... annotations) {
         super(providerId, id, annotations);
         this.mac = mac;
         this.vlan = vlan;
         this.location = location;
         this.ips = new HashSet<>(ips);
+        this.configured = configured;
     }
 
     @Override
@@ -68,6 +88,10 @@ public class DefaultHost extends AbstractElement implements Host {
         return mac;
     }
 
+    /**
+     * Returns an unmodifiable set of IP addresses currently bound to the
+     * host MAC address.
+     */
     @Override
     public Set<IpAddress> ipAddresses() {
         return Collections.unmodifiableSet(ips);
@@ -81,6 +105,11 @@ public class DefaultHost extends AbstractElement implements Host {
     @Override
     public VlanId vlan() {
         return vlan;
+    }
+
+    @Override
+    public boolean configured() {
+        return configured;
     }
 
     @Override
@@ -99,7 +128,8 @@ public class DefaultHost extends AbstractElement implements Host {
                     Objects.equals(this.mac, other.mac) &&
                     Objects.equals(this.vlan, other.vlan) &&
                     Objects.equals(this.location, other.location) &&
-                    Objects.equals(this.ipAddresses(), other.ipAddresses());
+                    Objects.equals(this.ipAddresses(), other.ipAddresses()) &&
+                    Objects.equals(this.annotations(), other.annotations());
         }
         return false;
     }
@@ -107,11 +137,13 @@ public class DefaultHost extends AbstractElement implements Host {
     @Override
     public String toString() {
         return toStringHelper(this)
-                .add("id", id)
-                .add("mac", mac)
-                .add("vlan", vlan)
-                .add("location", location)
-                .add("ipAddresses", ips)
+                .add("id", id())
+                .add("mac", mac())
+                .add("vlan", vlan())
+                .add("location", location())
+                .add("ipAddresses", ipAddresses())
+                .add("annotations", annotations())
+                .add("configured", configured())
                 .toString();
     }
 

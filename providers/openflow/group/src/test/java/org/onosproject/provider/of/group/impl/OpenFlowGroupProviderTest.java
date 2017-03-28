@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import com.google.common.collect.Lists;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.onosproject.core.DefaultGroupId;
 import org.onosproject.core.GroupId;
 import org.onosproject.net.Device;
 import org.onosproject.net.DeviceId;
@@ -41,6 +40,7 @@ import org.onosproject.net.provider.ProviderId;
 import org.onosproject.openflow.controller.Dpid;
 import org.onosproject.openflow.controller.OpenFlowController;
 import org.onosproject.openflow.controller.OpenFlowEventListener;
+import org.onosproject.openflow.controller.OpenFlowMessageListener;
 import org.onosproject.openflow.controller.OpenFlowSwitch;
 import org.onosproject.openflow.controller.OpenFlowSwitchListener;
 import org.onosproject.openflow.controller.PacketListener;
@@ -53,6 +53,7 @@ import org.projectfloodlight.openflow.protocol.OFGroupModFailedCode;
 import org.projectfloodlight.openflow.protocol.OFGroupStatsReply;
 import org.projectfloodlight.openflow.protocol.OFGroupType;
 import org.projectfloodlight.openflow.protocol.OFMessage;
+import org.projectfloodlight.openflow.protocol.OFMeterFeatures;
 import org.projectfloodlight.openflow.protocol.OFPortDesc;
 import org.projectfloodlight.openflow.protocol.OFVersion;
 import org.projectfloodlight.openflow.protocol.errormsg.OFGroupModFailedErrorMsg;
@@ -90,7 +91,7 @@ public class OpenFlowGroupProviderTest {
     @Test
     public void addGroup() {
 
-        GroupId groupId = new DefaultGroupId(1);
+        GroupId groupId = new GroupId(1);
 
         List<GroupBucket> bucketList = Lists.newArrayList();
         TrafficTreatment.Builder builder = DefaultTrafficTreatment.builder();
@@ -121,7 +122,7 @@ public class OpenFlowGroupProviderTest {
         TestOpenFlowGroupProviderService testProviderService =
                 (TestOpenFlowGroupProviderService) providerService;
 
-        GroupId groupId = new DefaultGroupId(1);
+        GroupId groupId = new GroupId(1);
         List<GroupBucket> bucketList = Lists.newArrayList();
         TrafficTreatment.Builder builder = DefaultTrafficTreatment.builder();
         builder.setOutput(PortNumber.portNumber(1));
@@ -200,6 +201,10 @@ public class OpenFlowGroupProviderTest {
             this.groups = groupEntries;
         }
 
+        @Override
+        public void notifyOfFailovers(Collection<Group> groups) {
+        }
+
         public Collection<Group> getGroupEntries() {
             return groups;
         }
@@ -221,6 +226,16 @@ public class OpenFlowGroupProviderTest {
 
         @Override
         public void removeListener(OpenFlowSwitchListener listener) {
+
+        }
+
+        @Override
+        public void addMessageListener(OpenFlowMessageListener listener) {
+
+        }
+
+        @Override
+        public void removeMessageListener(OpenFlowMessageListener listener) {
 
         }
 
@@ -288,7 +303,6 @@ public class OpenFlowGroupProviderTest {
         public OpenFlowSwitch getEqualSwitch(Dpid dpid) {
             return null;
         }
-
     }
 
     private class TestGroupProviderRegistry implements GroupProviderRegistry {
@@ -340,6 +354,11 @@ public class OpenFlowGroupProviderTest {
 
         @Override
         public List<OFPortDesc> getPorts() {
+            return null;
+        }
+
+        @Override
+        public OFMeterFeatures getMeterFeatures() {
             return null;
         }
 
@@ -407,6 +426,5 @@ public class OpenFlowGroupProviderTest {
         public String channelId() {
             return null;
         }
-
     }
 }

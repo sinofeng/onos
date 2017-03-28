@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,22 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.onosproject.ui.JsonUtils;
 import org.onosproject.ui.RequestHandler;
 
+import static org.onosproject.ui.table.TableModel.sortDir;
+
 /**
  * Message handler specifically for table views.
  */
 public abstract class TableRequestHandler extends RequestHandler {
+
+    private static final String FIRST_COL = "firstCol";
+    private static final String FIRST_DIR = "firstDir";
+    private static final String SECOND_COL = "secondCol";
+    private static final String SECOND_DIR = "secondDir";
+
+    private static final String ASC = "asc";
+
+    private static final String ANNOTS = "annots";
+    private static final String NO_ROWS_MSG_KEY = "no_rows_msg";
 
     private final String respType;
     private final String nodeName;
@@ -34,9 +46,9 @@ public abstract class TableRequestHandler extends RequestHandler {
      * table rows, sort them according the the request sort parameters, and
      * send back the response to the client.
      *
-     * @param reqType   type of the request event
-     * @param respType  type of the response event
-     * @param nodeName  name of JSON node holding row data
+     * @param reqType  type of the request event
+     * @param respType type of the response event
+     * @param nodeName name of JSON node holding row data
      */
     public TableRequestHandler(String reqType, String respType, String nodeName) {
         super(reqType);
@@ -45,17 +57,22 @@ public abstract class TableRequestHandler extends RequestHandler {
     }
 
     @Override
-    public void process(long sid, ObjectNode payload) {
+    public void process(ObjectNode payload) {
         TableModel tm = createTableModel();
         populateTable(tm, payload);
 
-        String sortCol = JsonUtils.string(payload, "sortCol", defaultColumnId());
-        String sortDir = JsonUtils.string(payload, "sortDir", "asc");
-        tm.sort(sortCol, TableModel.sortDir(sortDir));
+        String firstCol = JsonUtils.string(payload, FIRST_COL, defaultColumnId());
+        String firstDir = JsonUtils.string(payload, FIRST_DIR, ASC);
+        String secondCol = JsonUtils.string(payload, SECOND_COL, null);
+        String secondDir = JsonUtils.string(payload, SECOND_DIR, null);
+        tm.sort(firstCol, sortDir(firstDir), secondCol, sortDir(secondDir));
+
+        addTableConfigAnnotations(tm, payload);
 
         ObjectNode rootNode = MAPPER.createObjectNode();
-        rootNode.set(nodeName, TableUtils.generateArrayNode(tm));
-        sendMessage(respType, 0, rootNode);
+        rootNode.set(nodeName, TableUtils.generateRowArrayNode(tm));
+        rootNode.set(ANNOTS, TableUtils.generateAnnotObjectNode(tm));
+        sendMessage(respType, rootNode);
     }
 
     /**
@@ -69,6 +86,16 @@ public abstract class TableRequestHandler extends RequestHandler {
      */
     protected TableModel createTableModel() {
         return new TableModel(getColumnIds());
+    }
+
+    /**
+     * Adds table configuration specific annotations to table model.
+     *
+     * @param tm      a table model
+     * @param payload the event payload from the client
+     */
+    protected void addTableConfigAnnotations(TableModel tm, ObjectNode payload) {
+        tm.addAnnotation(NO_ROWS_MSG_KEY, noRowsMessage(payload));
     }
 
     /**
@@ -92,6 +119,16 @@ public abstract class TableRequestHandler extends RequestHandler {
     protected abstract String[] getColumnIds();
 
     /**
+     * Subclasses should return the message to display in the table when there
+     * are no rows to display. For example, a host table might return
+     * "No hosts found".
+     *
+     * @param payload request payload
+     * @return the message
+     */
+    protected abstract String noRowsMessage(ObjectNode payload);
+
+    /**
      * Subclasses should populate the table model by adding
      * {@link TableModel.Row rows}.
      * <pre>
@@ -104,7 +141,7 @@ public abstract class TableRequestHandler extends RequestHandler {
      * parameters (other than sort column and sort direction) that are required
      * to generate the appropriate data.
      *
-     * @param tm the table model
+     * @param tm      the table model
      * @param payload request payload
      */
     protected abstract void populateTable(TableModel tm, ObjectNode payload);

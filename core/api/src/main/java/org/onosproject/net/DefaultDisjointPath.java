@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,11 @@
 
 package org.onosproject.net;
 
+import org.onlab.graph.Weight;
 import org.onosproject.net.provider.ProviderId;
 
 import java.util.List;
 import java.util.Objects;
-import static com.google.common.collect.ImmutableSet.of;
 
 /**
  * Default implementation of a network disjoint path pair.
@@ -40,9 +40,20 @@ public class DefaultDisjointPath extends DefaultPath implements DisjointPath {
      * @param path2      backup path
      */
     public DefaultDisjointPath(ProviderId providerId, DefaultPath path1, DefaultPath path2) {
-        super(providerId, path1.links(), path1.cost() + path2.cost());
+        // Note: cost passed to super will never be used
+        super(providerId, path1.links(), path1.weight());
         this.path1 = path1;
         this.path2 = path2;
+    }
+
+    /**
+     * Creates a disjoint path pair from single default paths.
+     *
+     * @param providerId provider identity
+     * @param path1      primary path
+     */
+    public DefaultDisjointPath(ProviderId providerId, DefaultPath path1) {
+        this(providerId, path1, null);
     }
 
     @Override
@@ -56,10 +67,12 @@ public class DefaultDisjointPath extends DefaultPath implements DisjointPath {
 
     @Override
     public double cost() {
-        if (usingPath1) {
-            return path1.cost();
-        }
-        return path2.cost();
+        return usingPath1 ? path1.cost() : path2.cost();
+    }
+
+    @Override
+    public Weight weight() {
+        return usingPath1 ? path1.weight() : path2.weight();
     }
 
     @Override
@@ -74,7 +87,9 @@ public class DefaultDisjointPath extends DefaultPath implements DisjointPath {
 
     @Override
     public int hashCode() {
-        return Objects.hash(of(path1, path2), src(), dst());
+        // Note: DisjointPath with primary and secondary swapped
+        // must result in same hashCode
+        return Objects.hash(Objects.hashCode(path1) + Objects.hashCode(path2), src(), dst());
     }
 
     @Override
@@ -84,7 +99,8 @@ public class DefaultDisjointPath extends DefaultPath implements DisjointPath {
         }
         if (obj instanceof DefaultDisjointPath) {
             final DefaultDisjointPath other = (DefaultDisjointPath) obj;
-            return Objects.equals(this.path1, other.path1) && Objects.equals(this.path2, other.path2);
+            return (Objects.equals(this.path1, other.path1) && Objects.equals(this.path2, other.path2)) ||
+                   (Objects.equals(this.path1, other.path2) && Objects.equals(this.path2, other.path1));
         }
         return false;
     }

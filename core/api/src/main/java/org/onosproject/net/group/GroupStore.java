@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,12 @@ public interface GroupStore extends Store<GroupEvent, GroupStoreDelegate> {
         /**
          * Modify existing group by removing provided information from it.
          */
-        REMOVE
+        REMOVE,
+        /**
+         * Modify existing group entry by setting the provided information,
+         * overwriting the previous group entry entirely.
+         */
+        SET
     }
 
     /**
@@ -118,6 +123,18 @@ public interface GroupStore extends Store<GroupEvent, GroupStoreDelegate> {
     void removeGroupEntry(Group group);
 
     /**
+     * Removes all group entries of given device from store.
+     *
+     * @param deviceId device id
+     */
+    void purgeGroupEntry(DeviceId deviceId);
+
+    /**
+     * Removes all group entries from store.
+     */
+    default void purgeGroupEntries() {}
+
+    /**
      * A group entry that is present in switch but not in the store.
      *
      * @param group group entry
@@ -172,4 +189,11 @@ public interface GroupStore extends Store<GroupEvent, GroupStoreDelegate> {
      * @param groupEntries the group entries as received from southbound
      */
     void pushGroupMetrics(DeviceId deviceId, Collection<Group> groupEntries);
+
+    /**
+     * Indicates failover within a failover group.
+     *
+     * @param failoverGroups groups to notify
+     */
+    void notifyOfFailovers(Collection<Group> failoverGroups);
 }

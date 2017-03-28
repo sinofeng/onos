@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,25 +15,23 @@
  */
 package org.onosproject.net.host.impl;
 
-import static org.slf4j.LoggerFactory.getLogger;
-
-import org.slf4j.Logger;
-import org.onosproject.net.config.ConfigOperator;
-import org.onosproject.net.config.basics.BasicHostConfig;
-import org.onosproject.net.AnnotationKeys;
+import org.onlab.packet.IpAddress;
+import org.onosproject.net.ConnectPoint;
 import org.onosproject.net.DefaultAnnotations;
+import org.onosproject.net.HostLocation;
 import org.onosproject.net.SparseAnnotations;
+import org.onosproject.net.config.basics.BasicHostConfig;
+import org.onosproject.net.device.impl.BasicElementOperator;
 import org.onosproject.net.host.DefaultHostDescription;
 import org.onosproject.net.host.HostDescription;
 
+import java.util.Set;
+
 /**
  * Implementations of merge policies for various sources of host configuration
- * information. This includes applications, provides, and network configurations.
+ * information. This includes applications, providers, and network configurations.
  */
-public final class BasicHostOperator implements ConfigOperator {
-
-    protected static final double DEFAULT_COORD = -1.0;
-    private static final Logger log = getLogger(BasicHostOperator.class);
+public final class BasicHostOperator extends BasicElementOperator {
 
     private BasicHostOperator() {
     }
@@ -42,43 +40,46 @@ public final class BasicHostOperator implements ConfigOperator {
      * Generates a HostDescription containing fields from a HostDescription and
      * a HostConfig.
      *
-     * @param cfg the host config entity from network config
+     * @param cfg   the host config entity from network config
      * @param descr a HostDescription
      * @return HostDescription based on both sources
      */
-    public static HostDescription combine(BasicHostConfig cfg, HostDescription descr) {
+    public static HostDescription combine(BasicHostConfig cfg,
+                                          HostDescription descr) {
         if (cfg == null) {
             return descr;
         }
+
+        HostLocation location = descr.location();
+        ConnectPoint cfgLocation = cfg.location();
+        if (cfgLocation != null) {
+            location = new HostLocation(cfgLocation, System.currentTimeMillis());
+        }
+
+        Set<IpAddress> ipAddresses = descr.ipAddress();
+        Set<IpAddress> cfgIpAddresses = cfg.ipAddresses();
+        if (cfgIpAddresses != null) {
+            ipAddresses = cfgIpAddresses;
+        }
+
         SparseAnnotations sa = combine(cfg, descr.annotations());
-        return new DefaultHostDescription(descr.hwAddress(), descr.vlan(), descr.location(),
-                descr.ipAddress(), sa);
+        return new DefaultHostDescription(descr.hwAddress(), descr.vlan(),
+                location, ipAddresses,
+                descr.configured(), sa);
     }
 
     /**
      * Generates an annotation from an existing annotation and HostConfig.
      *
-     * @param cfg the device config entity from network config
-     * @param an the annotation
+     * @param cfg the host config entity from network config
+     * @param an  the annotation
      * @return annotation combining both sources
      */
     public static SparseAnnotations combine(BasicHostConfig cfg, SparseAnnotations an) {
-        DefaultAnnotations.Builder newBuilder = DefaultAnnotations.builder();
-        if (cfg.name() != null) {
-            newBuilder.set(AnnotationKeys.NAME, cfg.name());
-        }
-        if (cfg.latitude() != DEFAULT_COORD) {
-            newBuilder.set(AnnotationKeys.LATITUDE, Double.toString(cfg.latitude()));
-        }
-        if (cfg.longitude() != DEFAULT_COORD) {
-            newBuilder.set(AnnotationKeys.LONGITUDE, Double.toString(cfg.longitude()));
-        }
-        if (cfg.rackAddress() != null) {
-            newBuilder.set(AnnotationKeys.RACK_ADDRESS, cfg.rackAddress());
-        }
-        if (cfg.owner() != null) {
-            newBuilder.set(AnnotationKeys.OWNER, cfg.owner());
-        }
-        return DefaultAnnotations.union(an, newBuilder.build());
+        DefaultAnnotations.Builder builder = DefaultAnnotations.builder();
+
+        combineElementAnnotations(cfg, builder);
+
+        return DefaultAnnotations.union(an, builder.build());
     }
 }

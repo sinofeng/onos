@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -81,7 +81,7 @@ public final class BasicLinkOperator implements ConfigOperator {
         if (cfg.metric() != DEF_METRIC) {
             b.set(AnnotationKeys.METRIC, String.valueOf(cfg.metric()));
         }
-        if (cfg.latency() != DEF_DURATION) {
+        if (!cfg.latency().equals(DEF_DURATION)) {
             b.set(AnnotationKeys.LATENCY, cfg.latency().toString());
         }
         if (cfg.bandwidth() != DEF_BANDWIDTH) {
@@ -108,7 +108,9 @@ public final class BasicLinkOperator implements ConfigOperator {
         checkNotNull(dst, "Must supply a destination endpoint");
         checkNotNull(link, "Must supply a link");
         return new DefaultLinkDescription(
-                src, dst, link.type(), (SparseAnnotations) link.annotations());
+                src, dst, link.type(),
+                link.isExpected(),
+                (SparseAnnotations) link.annotations());
     }
 
     /**
@@ -126,7 +128,11 @@ public final class BasicLinkOperator implements ConfigOperator {
         checkNotNull(src, "Must supply a source endpoint");
         checkNotNull(dst, "Must supply a destination endpoint");
         checkNotNull(link, "Must supply a link config");
+        // Only allowed link is expected link
+        boolean expected = link.isAllowed();
         return new DefaultLinkDescription(
-                src, dst, link.type(), combine(link, DefaultAnnotations.EMPTY));
+                src, dst, link.type(),
+                expected,
+                combine(link, DefaultAnnotations.EMPTY));
     }
 }

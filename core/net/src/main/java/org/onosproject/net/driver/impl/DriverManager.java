@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.apache.felix.scr.annotations.Service;
 import org.onlab.util.ItemNotFoundException;
+import org.onosproject.net.AbstractProjectableModel;
 import org.onosproject.net.Device;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.device.DeviceService;
@@ -69,17 +70,22 @@ public class DriverManager extends DefaultDriverProvider implements DriverAdminS
 
     private Set<DriverProvider> providers = Sets.newConcurrentHashSet();
     private Map<String, Driver> driverByKey = Maps.newConcurrentMap();
+    private Map<String, Class<? extends Behaviour>> classes = Maps.newConcurrentMap();
 
     @Activate
     protected void activate() {
+        AbstractProjectableModel.setDriverService(null, this);
         log.info("Started");
     }
 
     @Deactivate
     protected void deactivate() {
+        AbstractProjectableModel.setDriverService(this, null);
+        providers.clear();
+        driverByKey.clear();
+        classes.clear();
         log.info("Stopped");
     }
-
 
     @Override
     public Set<DriverProvider> getProviders() {
@@ -89,10 +95,15 @@ public class DriverManager extends DefaultDriverProvider implements DriverAdminS
     @Override
     public void registerProvider(DriverProvider provider) {
         provider.getDrivers().forEach(driver -> {
-            addDrivers(provider.getDrivers());
+            Driver d = addDriver(driver);
             driverByKey.put(key(driver.manufacturer(),
                                 driver.hwVersion(),
-                                driver.swVersion()), driver);
+                                driver.swVersion()), d);
+            d.behaviours().forEach(b -> {
+                Class<? extends Behaviour> implementation = d.implementation(b);
+                classes.put(b.getName(), b);
+                classes.put(implementation.getName(), implementation);
+            });
         });
         providers.add(provider);
     }
@@ -100,7 +111,7 @@ public class DriverManager extends DefaultDriverProvider implements DriverAdminS
     @Override
     public void unregisterProvider(DriverProvider provider) {
         provider.getDrivers().forEach(driver -> {
-            removeDrivers(provider.getDrivers());
+            removeDriver(driver);
             driverByKey.remove(key(driver.manufacturer(),
                                    driver.hwVersion(),
                                    driver.swVersion()));
@@ -109,9 +120,13 @@ public class DriverManager extends DefaultDriverProvider implements DriverAdminS
     }
 
     @Override
+    public Class<? extends Behaviour> getBehaviourClass(String className) {
+        return classes.get(className);
+    }
+
+    @Override
     public Set<Driver> getDrivers() {
         checkPermission(DRIVER_READ);
-
         ImmutableSet.Builder<Driver> builder = ImmutableSet.builder();
         drivers.values().forEach(builder::add);
         return builder.build();
@@ -120,7 +135,6 @@ public class DriverManager extends DefaultDriverProvider implements DriverAdminS
     @Override
     public Set<Driver> getDrivers(Class<? extends Behaviour> withBehaviour) {
         checkPermission(DRIVER_READ);
-
         return drivers.values().stream()
                 .filter(d -> d.hasBehaviour(withBehaviour))
                 .collect(Collectors.toSet());
@@ -129,7 +143,6 @@ public class DriverManager extends DefaultDriverProvider implements DriverAdminS
     @Override
     public Driver getDriver(String driverName) {
         checkPermission(DRIVER_READ);
-
         return nullIsNotFound(drivers.get(driverName), NO_DRIVER);
     }
 
@@ -149,7 +162,7 @@ public class DriverManager extends DefaultDriverProvider implements DriverAdminS
                 .filter(d -> matches(d, mfr, hw, sw)).findFirst();
 
         // If no matching driver is found, return default.
-        return optional.isPresent() ? optional.get() : drivers.get(DEFAULT);
+        return optional.orElse(drivers.get(DEFAULT));
     }
 
     // Matches the given driver using ERE matching against the given criteria.
@@ -182,7 +195,6 @@ public class DriverManager extends DefaultDriverProvider implements DriverAdminS
     @Override
     public DriverHandler createHandler(DeviceId deviceId, String... credentials) {
         checkPermission(DRIVER_WRITE);
-
         Driver driver = getDriver(deviceId);
         return new DefaultDriverHandler(new DefaultDriverData(driver, deviceId));
     }

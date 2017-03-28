@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,9 @@ package org.onosproject.net.intent;
 import com.google.common.annotations.Beta;
 import com.google.common.base.MoreObjects;
 import org.onosproject.core.ApplicationId;
+import org.onosproject.net.CltSignalType;
 import org.onosproject.net.ConnectPoint;
-import org.onosproject.net.OduCltPort;
+import org.onosproject.net.ResourceGroup;
 
 import java.util.Collections;
 
@@ -33,7 +34,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class OpticalCircuitIntent extends Intent {
     private final ConnectPoint src;
     private final ConnectPoint dst;
-    private final OduCltPort.SignalType signalType;
+    private final CltSignalType signalType;
     private final boolean isBidirectional;
 
     /**
@@ -47,10 +48,35 @@ public class OpticalCircuitIntent extends Intent {
      * @param signalType ODU signal type
      * @param isBidirectional indicate if intent is bidirectional
      * @param priority priority to use for flows from this intent
+     * @deprecated 1.9.1
+     */
+    @Deprecated
+    protected OpticalCircuitIntent(ApplicationId appId, Key key, ConnectPoint src, ConnectPoint dst,
+                                   CltSignalType signalType, boolean isBidirectional, int priority) {
+        super(appId, key, Collections.emptyList(), priority, null);
+        this.src = checkNotNull(src);
+        this.dst = checkNotNull(dst);
+        this.signalType = checkNotNull(signalType);
+        this.isBidirectional = isBidirectional;
+    }
+
+    /**
+     * Creates an optical circuit intent between the specified
+     * connection points.
+     *
+     * @param appId application identification
+     * @param key intent key
+     * @param src the source transponder port
+     * @param dst the destination transponder port
+     * @param signalType ODU signal type
+     * @param isBidirectional indicate if intent is bidirectional
+     * @param priority priority to use for flows from this intent
+     * @param resourceGroup resource group for this intent
      */
     protected OpticalCircuitIntent(ApplicationId appId, Key key, ConnectPoint src, ConnectPoint dst,
-                                   OduCltPort.SignalType signalType, boolean isBidirectional, int priority) {
-        super(appId, key, Collections.emptyList(), priority);
+                                   CltSignalType signalType, boolean isBidirectional, int priority,
+                                   ResourceGroup resourceGroup) {
+        super(appId, key, Collections.emptyList(), priority, resourceGroup);
         this.src = checkNotNull(src);
         this.dst = checkNotNull(dst);
         this.signalType = checkNotNull(signalType);
@@ -73,7 +99,7 @@ public class OpticalCircuitIntent extends Intent {
     public static class Builder extends Intent.Builder {
         private ConnectPoint src;
         private ConnectPoint dst;
-        private OduCltPort.SignalType signalType;
+        private CltSignalType signalType;
         private boolean isBidirectional;
 
         @Override
@@ -89,6 +115,11 @@ public class OpticalCircuitIntent extends Intent {
         @Override
         public Builder priority(int priority) {
             return (Builder) super.priority(priority);
+        }
+
+        @Override
+        public Builder resourceGroup(ResourceGroup resourceGroup) {
+            return (Builder) super.resourceGroup(resourceGroup);
         }
 
         /**
@@ -119,7 +150,7 @@ public class OpticalCircuitIntent extends Intent {
          * @param signalType signal type to use for built intent
          * @return this builder
          */
-        public Builder signalType(OduCltPort.SignalType signalType) {
+        public Builder signalType(CltSignalType signalType) {
             this.signalType = signalType;
             return this;
         }
@@ -149,7 +180,8 @@ public class OpticalCircuitIntent extends Intent {
                     dst,
                     signalType,
                     isBidirectional,
-                    priority
+                    priority,
+                    resourceGroup
             );
         }
     }
@@ -188,7 +220,7 @@ public class OpticalCircuitIntent extends Intent {
      *
      * @return ODU signal type
      */
-    public OduCltPort.SignalType getSignalType() {
+    public CltSignalType getSignalType() {
         return signalType;
     }
 
@@ -213,6 +245,7 @@ public class OpticalCircuitIntent extends Intent {
                 .add("dst", dst)
                 .add("signalType", signalType)
                 .add("isBidirectional", isBidirectional)
+                .add("resourceGroup", resourceGroup())
                 .toString();
     }
 

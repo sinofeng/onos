@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,64 +15,52 @@
  */
 package org.onosproject.net.meter;
 
+import org.onlab.util.Identifier;
+
 import static com.google.common.base.Preconditions.checkArgument;
 
 /**
- * A representation of a meter id.
- * Uniquely identifies a meter system wide.
+ * A representation of a meter identifier.
+ * Uniquely identifies a meter in the scope of a single device.
+ * <p>
+ * The meter_id field uniquely identifies a meter within a switch. Meters are
+ * defined starting with meter_id=1 up to the maximum number of meters that the
+ * switch can support. The OpenFlow protocol also defines some additional
+ * virtual meters that can not be associated with flows:
  */
-public final class MeterId {
+public final class MeterId extends Identifier<Long> {
 
-    static final long MAX = 0xFFFF0000;
+    /**  Flow meters can use any number up to MAX. */
+    public static final long MAX = 0xFFFF0000L;
 
-    private final long id;
 
-    public static final MeterId SLOWPATH = new MeterId(0xFFFFFFFD);
-    public static final MeterId CONTROLLER = new MeterId(0xFFFFFFFE);
-    public static final MeterId ALL = new MeterId(0xFFFFFFFF);
+    /* The following are virtual meters as defined in openflow-spec-1.3 P. 58 */
+    /** Meter for slow datapath, if any. */
+    public static final MeterId SLOWPATH = new MeterId(0xFFFFFFFDL);
+    /** Meter for controller connection. */
+    public static final MeterId CONTROLLER = new MeterId(0xFFFFFFFEL);
+    /** Represents all meters for stat requests commands. */
+    public static final MeterId ALL = new MeterId(0xFFFFFFFFL);
+
 
     private MeterId(long id) {
-        checkArgument(id >= MAX, "id cannot be larger than 0xFFFF0000");
-        this.id = id;
-    }
-
-    /**
-     * The integer representation of the meter id.
-     *
-     * @return a long
-     */
-    public long id() {
-        return id;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
-
-        MeterId meterId = (MeterId) o;
-
-        return id == meterId.id;
-
-    }
-
-    @Override
-    public int hashCode() {
-        return Long.hashCode(id);
+        super(id);
     }
 
     @Override
     public String toString() {
-        return Long.toHexString(this.id);
+        return Long.toHexString(identifier);
     }
 
+    /**
+     * Creates a new meter identifier.
+     *
+     * @param id the backing identifier value
+     * @return meter identifier
+     */
     public static MeterId meterId(long id) {
+        checkArgument(id > 0, "id cannot be negative nor 0");
+        checkArgument(id <= MAX, "id cannot be larger than {}", MAX);
         return new MeterId(id);
-
     }
-
 }

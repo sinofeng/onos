@@ -2,7 +2,7 @@
 #set( $symbol_dollar = '$' )
 #set( $symbol_escape = '\' )
 /*
- * Copyright 2014,2015 Open Networking Laboratory
+ * Copyright ${year}-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,6 +45,8 @@ public class AppUiTableMessageHandler extends UiMessageHandler {
     private static final String SAMPLE_TABLE_DETAIL_RESP = "sampleTableDetailsResponse";
     private static final String DETAILS = "details";
 
+    private static final String NO_ROWS_MESSAGE = "No items found";
+
     private static final String ID = "id";
     private static final String LABEL = "label";
     private static final String CODE = "code";
@@ -81,6 +83,11 @@ public class AppUiTableMessageHandler extends UiMessageHandler {
         // if required, override createTableModel() to set column formatters / comparators
 
         @Override
+        protected String noRowsMessage(ObjectNode payload) {
+            return NO_ROWS_MESSAGE;
+        }
+
+        @Override
         protected void populateTable(TableModel tm, ObjectNode payload) {
             // === NOTE: the table model supplied here will have been created
             // via  a call to createTableModel(). To assign non-default
@@ -114,7 +121,7 @@ public class AppUiTableMessageHandler extends UiMessageHandler {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             String id = string(payload, ID, "(none)");
 
             // SomeService ss = get(SomeService.class);
@@ -140,7 +147,7 @@ public class AppUiTableMessageHandler extends UiMessageHandler {
                 data.put(COMMENT, "Some arbitrary comment");
             }
 
-            sendMessage(SAMPLE_TABLE_DETAIL_RESP, 0, rootNode);
+            sendMessage(SAMPLE_TABLE_DETAIL_RESP, rootNode);
         }
     }
 

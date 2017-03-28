@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 package org.onosproject.openflow;
-
-import java.util.List;
 
 import org.jboss.netty.channel.Channel;
 import org.onosproject.net.Device;
@@ -33,9 +31,13 @@ import org.projectfloodlight.openflow.protocol.OFFactories;
 import org.projectfloodlight.openflow.protocol.OFFactory;
 import org.projectfloodlight.openflow.protocol.OFFeaturesReply;
 import org.projectfloodlight.openflow.protocol.OFMessage;
+import org.projectfloodlight.openflow.protocol.OFMeterFeatures;
+import org.projectfloodlight.openflow.protocol.OFMeterFeaturesStatsReply;
 import org.projectfloodlight.openflow.protocol.OFPortDesc;
 import org.projectfloodlight.openflow.protocol.OFPortDescStatsReply;
 import org.projectfloodlight.openflow.protocol.OFVersion;
+
+import java.util.List;
 
 /**
  * Testing adapter for the OpenFlow switch driver class.
@@ -116,6 +118,11 @@ public class OpenflowSwitchDriverAdapter implements OpenFlowSwitchDriver {
 
     @Override
     public void setFeaturesReply(OFFeaturesReply featuresReply) {
+
+    }
+
+    @Override
+    public void setMeterFeaturesReply(OFMeterFeaturesStatsReply meterFeaturesReply) {
 
     }
 
@@ -231,6 +238,11 @@ public class OpenflowSwitchDriverAdapter implements OpenFlowSwitchDriver {
 
     @Override
     public List<OFPortDesc> getPorts() {
+        return null;
+    }
+
+    @Override
+    public OFMeterFeatures getMeterFeatures() {
         return null;
     }
 

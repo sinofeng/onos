@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,6 @@ import static org.junit.Assert.*;
 import static org.onosproject.net.DeviceId.deviceId;
 import static org.onosproject.net.PortNumber.portNumber;
 
-import java.io.IOException;
-import java.net.ServerSocket;
 import java.net.URI;
 import java.util.Collection;
 import java.util.Collections;
@@ -29,10 +27,10 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.lang3.RandomUtils;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.onlab.junit.TestTools;
 import org.onlab.packet.ChassisId;
 import org.onosproject.incubator.rpc.RemoteServiceContext;
 import org.onosproject.incubator.rpc.RemoteServiceContextProvider;
@@ -114,28 +112,15 @@ public class GrpcRemoteServiceTest {
 
     private URI uri;
 
-    public static int pickListenPort() {
-        try {
-            // pick unused port
-            ServerSocket socket = new ServerSocket(0);
-            int port = socket.getLocalPort();
-            socket.close();
-            return port;
-        } catch (IOException e) {
-            // something went wrong, try picking randomly
-            return RandomUtils.nextInt(49152, 0xFFFF + 1);
-        }
-    }
-
     @Before
     public void setUp() throws Exception {
         serverReady = new CountDownLatch(1);
         server = new GrpcRemoteServiceServer();
         server.deviceProviderRegistry = new MTestDeviceProviderRegistry();
         server.linkProviderRegistry = new ServerSideLinkProviderRegistry();
-        // todo: pass proper ComponentContext
-        server.listenPort = pickListenPort();
+        server.listenPort = TestTools.findAvailablePort(11984);
         uri = URI.create("grpc://localhost:" + server.listenPort);
+        // todo: pass proper ComponentContext
         server.activate(null);
 
         client = new GrpcRemoteServiceProvider();
@@ -356,6 +341,10 @@ public class GrpcRemoteServiceTest {
         DeviceId isReachableDid;
         boolean isReachableReply = false;
 
+        final CountDownLatch portStateChanged = new CountDownLatch(1);
+        DeviceId portStateChangedDid;
+        PortNumber portStateChangedPort;
+
         @Override
         public ProviderId id() {
             return PID;
@@ -382,6 +371,17 @@ public class GrpcRemoteServiceTest {
             isReachableDid = deviceId;
             isReachable.countDown();
             return isReachableReply;
+        }
+
+        @Override
+        public void changePortState(DeviceId deviceId, PortNumber portNumber,
+                                    boolean enable) {
+            log.info("portState change to {} on ({},{}) on Client called", enable,
+                     deviceId, portNumber);
+            portStateChangedDid = deviceId;
+            portStateChangedPort = portNumber;
+            portStateChanged.countDown();
+
         }
 
     }
@@ -449,7 +449,6 @@ public class GrpcRemoteServiceTest {
             deviceConnectedDesc = deviceDescription;
             deviceConnected.countDown();
         }
-
 
         final CountDownLatch updatePorts = new CountDownLatch(1);
         DeviceId updatePortsDid;

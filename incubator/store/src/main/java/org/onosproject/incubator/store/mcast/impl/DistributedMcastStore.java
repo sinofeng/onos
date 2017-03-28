@@ -1,3 +1,18 @@
+/*
+ * Copyright 2015-present Open Networking Laboratory
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.onosproject.incubator.store.mcast.impl;
 
 import org.apache.felix.scr.annotations.Activate;
@@ -6,24 +21,24 @@ import org.apache.felix.scr.annotations.Deactivate;
 import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.apache.felix.scr.annotations.Service;
-import org.onlab.packet.IpAddress;
 import org.onlab.util.KryoNamespace;
 import org.onosproject.net.ConnectPoint;
 import org.onosproject.net.mcast.McastEvent;
 import org.onosproject.net.mcast.McastRoute;
-import org.onosproject.net.mcast.McastRouteInfo;
 import org.onosproject.net.mcast.McastStore;
 import org.onosproject.net.mcast.McastStoreDelegate;
 import org.onosproject.store.AbstractStore;
+import org.onosproject.store.serializers.KryoNamespaces;
 import org.onosproject.store.service.ConsistentMap;
 import org.onosproject.store.service.Serializer;
 import org.onosproject.store.service.StorageService;
 import org.slf4j.Logger;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
+import static org.onosproject.net.mcast.McastRouteInfo.mcastRouteInfo;
 import static org.slf4j.LoggerFactory.getLogger;
 
 /**
@@ -39,33 +54,33 @@ public class DistributedMcastStore extends AbstractStore<McastEvent, McastStoreD
     // map and not emitting events but rather use a provider-like mechanism
     // to program the dataplane.
 
-    private static final String MCASTRIB = "mcast-rib-table";
+    private static final String MCASTRIB = "onos-mcast-rib-table";
     private Logger log = getLogger(getClass());
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
-    private StorageService storageService;
+    protected StorageService storageService;
 
-    protected ConsistentMap<McastRoute, MulticastData> mcastRIB;
+    protected ConsistentMap<McastRoute, MulticastData> mcastRib;
     protected Map<McastRoute, MulticastData> mcastRoutes;
 
 
     @Activate
     public void activate() {
 
-        mcastRIB = storageService.<McastRoute, MulticastData>consistentMapBuilder()
+        mcastRib = storageService.<McastRoute, MulticastData>consistentMapBuilder()
                 .withName(MCASTRIB)
-                .withSerializer(Serializer.using(KryoNamespace.newBuilder().register(
-                        MulticastData.class,
-                        McastRoute.class,
-                        McastRoute.Type.class,
-                        IpAddress.class,
-                        List.class,
-                        ConnectPoint.class
-                ).build()))
-                .withRelaxedReadConsistency()
+                .withSerializer(Serializer.using(KryoNamespace.newBuilder()
+                                                         .register(KryoNamespaces.API)
+                                                         .register(
+                                                                 AtomicReference.class,
+                                                                 MulticastData.class,
+                                                                 McastRoute.class,
+                                                                 McastRoute.Type.class
+                                                         ).build()))
+                //.withRelaxedReadConsistency()
                 .build();
 
-        mcastRoutes = mcastRIB.asJavaMap();
+        mcastRoutes = mcastRib.asJavaMap();
 
 
         log.info("Started");
@@ -81,14 +96,14 @@ public class DistributedMcastStore extends AbstractStore<McastEvent, McastStoreD
         switch (operation) {
             case ADD:
                 if (mcastRoutes.putIfAbsent(route, MulticastData.empty()) == null) {
-                    delegate.notify(new McastEvent(McastEvent.Type.ROUTE_ADDED,
-                                                   McastRouteInfo.mcastRouteInfo(route)));
+                    notifyDelegate(new McastEvent(McastEvent.Type.ROUTE_ADDED,
+                                                  mcastRouteInfo(route)));
                 }
                 break;
             case REMOVE:
                 if (mcastRoutes.remove(route) != null) {
-                    delegate.notify(new McastEvent(McastEvent.Type.ROUTE_REMOVED,
-                                                   McastRouteInfo.mcastRouteInfo(route)));
+                    notifyDelegate(new McastEvent(McastEvent.Type.ROUTE_REMOVED,
+                                                  mcastRouteInfo(route)));
                 }
                 break;
             default:
@@ -109,10 +124,10 @@ public class DistributedMcastStore extends AbstractStore<McastEvent, McastStoreD
 
 
         if (data != null) {
-            delegate.notify(new McastEvent(McastEvent.Type.SOURCE_ADDED,
-                                           McastRouteInfo.mcastRouteInfo(route,
-                                                                         data.sinks(),
-                                                                         source)));
+            notifyDelegate(new McastEvent(McastEvent.Type.SOURCE_ADDED,
+                                          mcastRouteInfo(route,
+                                                         data.sinks(),
+                                                         source)));
         }
 
     }
@@ -142,19 +157,16 @@ public class DistributedMcastStore extends AbstractStore<McastEvent, McastStoreD
         if (data != null) {
             switch (operation) {
                 case ADD:
-                    delegate.notify(new McastEvent(
-                            McastEvent.Type.SINK_ADDED,
-                            McastRouteInfo.mcastRouteInfo(route,
-                                                          sink,
-                                                          data.source())));
+                    notifyDelegate(new McastEvent(McastEvent.Type.SINK_ADDED,
+                                                  mcastRouteInfo(route, sink,
+                                                                 data.source())));
                     break;
                 case REMOVE:
                     if (data != null) {
-                        delegate.notify(new McastEvent(
-                                McastEvent.Type.SINK_REMOVED,
-                                McastRouteInfo.mcastRouteInfo(route,
-                                                              sink,
-                                                              data.source())));
+                        notifyDelegate(new McastEvent(McastEvent.Type.SINK_REMOVED,
+                                                      mcastRouteInfo(route,
+                                                                     sink,
+                                                                     data.source())));
                     }
                     break;
                 default:
@@ -172,6 +184,11 @@ public class DistributedMcastStore extends AbstractStore<McastEvent, McastStoreD
     @Override
     public Set<ConnectPoint> sinksFor(McastRoute route) {
         return mcastRoutes.getOrDefault(route, MulticastData.empty()).sinks();
+    }
+
+    @Override
+    public Set<McastRoute> getRoutes() {
+        return mcastRoutes.keySet();
     }
 
 }

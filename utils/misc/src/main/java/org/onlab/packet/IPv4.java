@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2014-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-/**
- *
- */
 package org.onlab.packet;
 
 import java.nio.ByteBuffer;
@@ -31,7 +28,7 @@ import static org.onlab.packet.PacketUtils.*;
 /**
  * Implements IPv4 packet format.
  */
-public class IPv4 extends BasePacket {
+public class IPv4 extends IP {
     public static final byte PROTOCOL_ICMP = 0x1;
     public static final byte PROTOCOL_IGMP = 0x2;
     public static final byte PROTOCOL_TCP = 0x6;
@@ -79,18 +76,12 @@ public class IPv4 extends BasePacket {
         this.isTruncated = false;
     }
 
-    /**
-     * @return the version
-     */
+    @Override
     public byte getVersion() {
         return this.version;
     }
 
-    /**
-     * @param version
-     *            the version to set
-     * @return this
-     */
+    @Override
     public IPv4 setVersion(final byte version) {
         this.version = version;
         return this;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2014-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package org.onosproject.optical;
 
-import com.google.common.collect.ImmutableList;
 import org.apache.felix.scr.annotations.Activate;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Deactivate;
@@ -26,12 +25,11 @@ import org.onosproject.cluster.NodeId;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.core.CoreService;
 import org.onosproject.mastership.MastershipService;
+import org.onosproject.net.CltSignalType;
 import org.onosproject.net.ConnectPoint;
 import org.onosproject.net.Device;
 import org.onosproject.net.Host;
 import org.onosproject.net.Link;
-import org.onosproject.net.OchPort;
-import org.onosproject.net.OduCltPort;
 import org.onosproject.net.OduSignalType;
 import org.onosproject.net.Path;
 import org.onosproject.net.Port;
@@ -46,16 +44,14 @@ import org.onosproject.net.intent.IntentState;
 import org.onosproject.net.intent.OpticalCircuitIntent;
 import org.onosproject.net.intent.OpticalConnectivityIntent;
 import org.onosproject.net.intent.PointToPointIntent;
-import org.onosproject.net.newresource.ResourceAllocation;
-import org.onosproject.net.newresource.ResourceService;
-import org.onosproject.net.resource.device.IntentSetMultimap;
+import org.onosproject.net.optical.OchPort;
+import org.onosproject.net.optical.OduCltPort;
 import org.onosproject.net.topology.LinkWeight;
 import org.onosproject.net.topology.PathService;
 import org.onosproject.net.topology.TopologyEdge;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -64,13 +60,17 @@ import java.util.Set;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static org.onosproject.net.optical.device.OpticalDeviceServiceView.opticalView;
 
 /**
  * OpticalPathProvisioner listens for event notifications from the Intent F/W.
  * It generates one or more opticalConnectivityIntent(s) and submits (or withdraws) to Intent F/W
  * for adding/releasing capacity at the packet layer.
+ *
+ * @deprecated in Goldeneye (1.6.0)
  */
 
+@Deprecated
 @Component(immediate = true)
 public class OpticalPathProvisioner {
 
@@ -98,18 +98,13 @@ public class OpticalPathProvisioner {
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected DeviceService deviceService;
 
-    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
-    protected IntentSetMultimap intentSetMultimap;
-
-    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
-    protected ResourceService resourceService;
-
     private ApplicationId appId;
 
     private final InternalOpticalPathProvisioner pathProvisioner = new InternalOpticalPathProvisioner();
 
     @Activate
     protected void activate() {
+        deviceService = opticalView(deviceService);
         intentService.addListener(pathProvisioner);
         appId = coreService.registerApplication("org.onosproject.optical");
         initOpticalPorts();
@@ -141,10 +136,6 @@ public class OpticalPathProvisioner {
                 case FAILED:
                     log.info("Intent {} failed, calling optical path provisioning app.", event.subject());
                     setupLightpath(event.subject());
-                    break;
-                case WITHDRAWN:
-                    log.info("Intent {} withdrawn.", event.subject());
-                    releaseResources(event.subject());
                     break;
                 default:
                     break;
@@ -290,7 +281,7 @@ public class OpticalPathProvisioner {
                             .appId(appId)
                             .src(src)
                             .dst(dst)
-                            .signalType(OduCltPort.SignalType.CLT_10GBE)
+                            .signalType(CltSignalType.CLT_10GBE)
                             .bidirectional(true)
                             .build();
                     intents.add(circuitIntent);
@@ -370,26 +361,6 @@ public class OpticalPathProvisioner {
             }
         }
 
-        /**
-         * Release resources associated to the given intent.
-         *
-         * @param intent the intent
-         */
-        private void releaseResources(Intent intent) {
-            Collection<ResourceAllocation> allocations = resourceService.getResourceAllocations(intent.id());
-            if (intent instanceof OpticalConnectivityIntent) {
-                resourceService.release(intent.id());
-                if (!allocations.isEmpty()) {
-                    resourceService.release(ImmutableList.copyOf(allocations));
-                }
-            } else if (intent instanceof OpticalCircuitIntent) {
-                resourceService.release(intent.id());
-                intentSetMultimap.releaseMapping(intent.id());
-                if (!allocations.isEmpty()) {
-                    resourceService.release(ImmutableList.copyOf(allocations));
-                }
-            }
-        }
     }
 
     /**
@@ -399,7 +370,7 @@ public class OpticalPathProvisioner {
      * @return true if in packet layer, false otherwise
      */
     private boolean isPacketLayer(Device.Type type) {
-        return type == Device.Type.SWITCH || type == Device.Type.ROUTER;
+        return type == Device.Type.SWITCH || type == Device.Type.ROUTER || type == Device.Type.VIRTUAL;
     }
 
     /**

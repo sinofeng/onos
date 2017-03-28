@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2014-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,8 +51,18 @@ public class PathIntentTest extends ConnectivityIntentTest {
     private final ConnectPoint cp2 = new ConnectPoint(device1, port2);
     private final ConnectPoint cp3 = new ConnectPoint(device2, port3);
     private final ConnectPoint cp4 = new ConnectPoint(device2, port4);
-    private final DefaultLink link1 = new DefaultLink(provider1, cp1, cp2, DIRECT);
-    private final DefaultLink link2 = new DefaultLink(provider1, cp1, cp2, DIRECT);
+    private final DefaultLink link1 = DefaultLink.builder()
+            .providerId(provider1)
+            .src(cp1)
+            .dst(cp2)
+            .type(DIRECT)
+            .build();
+    private final DefaultLink link2 = DefaultLink.builder()
+            .providerId(provider1)
+            .src(cp1)
+            .dst(cp2)
+            .type(DIRECT)
+            .build();
     private final double cost = 1;
 
     @Test
@@ -63,6 +73,21 @@ public class PathIntentTest extends ConnectivityIntentTest {
         assertEquals("incorrect action", NOP, intent.treatment());
         assertEquals("incorrect path", PATH1, intent.path());
         assertEquals("incorrect key", KEY, intent.key());
+
+        intent = createAnother();
+        assertEquals("incorrect id", APPID, intent.appId());
+        assertEquals("incorrect match", MATCH, intent.selector());
+        assertEquals("incorrect action", NOP, intent.treatment());
+        assertEquals("incorrect path", PATH2, intent.path());
+        assertEquals("incorrect key", KEY, intent.key());
+
+        intent = createWithResourceGroup();
+        assertEquals("incorrect id", APPID, intent.appId());
+        assertEquals("incorrect match", MATCH, intent.selector());
+        assertEquals("incorrect action", NOP, intent.treatment());
+        assertEquals("incorrect path", PATH2, intent.path());
+        assertEquals("incorrect key", KEY, intent.key());
+        assertEquals("incorrect resource group", RESOURCE_GROUP, intent.resourceGroup());
     }
 
     @Override
@@ -80,9 +105,21 @@ public class PathIntentTest extends ConnectivityIntentTest {
     protected PathIntent createAnother() {
         return PathIntent.builder()
                 .appId(APPID)
+                .key(KEY)
                 .selector(MATCH)
                 .treatment(NOP)
                 .path(PATH2)
+                .build();
+    }
+
+    protected PathIntent createWithResourceGroup() {
+        return PathIntent.builder()
+                .appId(APPID)
+                .key(KEY)
+                .selector(MATCH)
+                .treatment(NOP)
+                .path(PATH2)
+                .resourceGroup(RESOURCE_GROUP)
                 .build();
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import org.onosproject.bgpio.exceptions.BgpParseException;
 import org.onosproject.bgpio.types.BgpErrorType;
 import org.onosproject.bgpio.types.BgpValueType;
 import org.onosproject.bgpio.types.IPReachabilityInformationTlv;
-import org.onosproject.bgpio.types.OSPFRouteTypeTlv;
+import org.onosproject.bgpio.types.OspfRouteTypeTlv;
 import org.onosproject.bgpio.types.attr.BgpAttrNodeMultiTopologyId;
 import org.onosproject.bgpio.util.UnSupportedAttribute;
 import org.slf4j.Logger;
@@ -51,6 +51,7 @@ public class BgpPrefixLSIdentifier implements Comparable<Object> {
     public BgpPrefixLSIdentifier() {
         this.localNodeDescriptors = null;
         this.prefixDescriptor = null;
+        log.debug("Parameters are reset");
     }
 
     /**
@@ -74,11 +75,11 @@ public class BgpPrefixLSIdentifier implements Comparable<Object> {
      */
     public static BgpPrefixLSIdentifier parsePrefixIdendifier(ChannelBuffer cb, byte protocolId)
             throws BgpParseException {
-        //Parse Local Node descriptor
+        log.debug("Parse local node descriptor");
         NodeDescriptors localNodeDescriptors = new NodeDescriptors();
         localNodeDescriptors = parseLocalNodeDescriptors(cb, protocolId);
 
-        //Parse Prefix descriptor
+        log.debug("MultiTopologyId TLV cannot repeat more than once");
         List<BgpValueType> prefixDescriptor = new LinkedList<>();
         prefixDescriptor = parsePrefixDescriptors(cb);
         return new BgpPrefixLSIdentifier(localNodeDescriptors, prefixDescriptor);
@@ -139,8 +140,8 @@ public class BgpPrefixLSIdentifier implements Comparable<Object> {
             }
             tempCb = cb.readBytes(length);
             switch (type) {
-            case OSPFRouteTypeTlv.TYPE:
-                tlv = OSPFRouteTypeTlv.read(tempCb);
+            case OspfRouteTypeTlv.TYPE:
+                tlv = OspfRouteTypeTlv.read(tempCb);
                 break;
             case IPReachabilityInformationTlv.TYPE:
                 tlv = IPReachabilityInformationTlv.read(tempCb, length);
@@ -238,6 +239,7 @@ public class BgpPrefixLSIdentifier implements Comparable<Object> {
             return 0;
         }
         int result = this.localNodeDescriptors.compareTo(((BgpPrefixLSIdentifier) o).localNodeDescriptors);
+        boolean tlvFound = false;
         if (result != 0) {
             return result;
         } else {
@@ -249,20 +251,24 @@ public class BgpPrefixLSIdentifier implements Comparable<Object> {
                 } else {
                     return -1;
                 }
-           }
+            }
 
             ListIterator<BgpValueType> listIterator = prefixDescriptor.listIterator();
-            ListIterator<BgpValueType> listIteratorOther = ((BgpPrefixLSIdentifier) o).prefixDescriptor.listIterator();
             while (listIterator.hasNext()) {
-                BgpValueType tlv = listIterator.next();
-                if (prefixDescriptor.contains(tlv) && ((BgpPrefixLSIdentifier) o).prefixDescriptor.contains(tlv)) {
-                    int res = prefixDescriptor.get(prefixDescriptor.indexOf(tlv)).compareTo(
-                            ((BgpPrefixLSIdentifier) o).prefixDescriptor
-                                    .get(((BgpPrefixLSIdentifier) o).prefixDescriptor.indexOf(tlv)));
-                    if (res != 0) {
-                        return res;
+                BgpValueType tlv1 = listIterator.next();
+                for (BgpValueType tlv : ((BgpPrefixLSIdentifier) o).prefixDescriptor) {
+                    if (tlv.getType() == tlv1.getType()) {
+                        result = prefixDescriptor.get(prefixDescriptor.indexOf(tlv1)).compareTo(
+                                ((BgpPrefixLSIdentifier) o).prefixDescriptor
+                                        .get(((BgpPrefixLSIdentifier) o).prefixDescriptor.indexOf(tlv)));
+                        if (result != 0) {
+                            return result;
+                        }
+                        tlvFound = true;
+                        break;
                     }
-                } else {
+                }
+                if (!tlvFound) {
                     return 1;
                 }
             }

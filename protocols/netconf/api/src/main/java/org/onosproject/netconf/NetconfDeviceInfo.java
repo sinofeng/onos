@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,7 +39,10 @@ public class NetconfDeviceInfo {
     private String password;
     private IpAddress ipAddress;
     private int port;
+    private char[] key;
+    //File keyFile @deprecated 1.9.0
     private File keyFile;
+    private DeviceId deviceId;
 
 
     /**
@@ -68,7 +71,12 @@ public class NetconfDeviceInfo {
      * @param password  the password for the device
      * @param ipAddress the ip address
      * @param port      the tcp port
-     * @param keyString the string containing the key.
+     * @param keyString the string containing a DSA or RSA private key
+     *                  of the user in OpenSSH key format
+     *                  <br>
+     *                  (Pre 1.9.0 behaviour: {@code keyString} can be file path
+     *                  to a file containing DSA or RSA private key of the user
+     *                  in OpenSSH key format)
      */
     public NetconfDeviceInfo(String name, String password, IpAddress ipAddress,
                              int port, String keyString) {
@@ -79,6 +87,7 @@ public class NetconfDeviceInfo {
         this.password = password;
         this.ipAddress = ipAddress;
         this.port = port;
+        this.key = keyString.toCharArray();
         this.keyFile = new File(keyString);
     }
 
@@ -119,10 +128,25 @@ public class NetconfDeviceInfo {
     }
 
     /**
+     * Exposes the key of the controller.
+     *
+     * @return {@code char[]} containing a DSA or RSA private key of the user
+     *         in OpenSSH key format
+     *         or null if device is not configured to use public key authentication
+     */
+    public char[] getKey() {
+        return key;
+    }
+
+    /**
      * Exposes the keyFile of the controller.
      *
-     * @return int port address
+     * @return File object pointing to a file containing a DSA or RSA
+     *         private key of the user in OpenSSH key format,
+     *         or null if device is not configured to use public key authentication
+     * @deprecated 1.9.0
      */
+    @Deprecated
     public File getKeyFile() {
         return keyFile;
     }
@@ -133,6 +157,7 @@ public class NetconfDeviceInfo {
      *
      * @return String device info
      */
+    @Override
     public String toString() {
         return "netconf:" + name + "@" + ipAddress + ":" + port;
     }
@@ -143,13 +168,14 @@ public class NetconfDeviceInfo {
      * @return DeviceId
      */
     public DeviceId getDeviceId() {
-
-        try {
-            return DeviceId.deviceId(new URI(this.toString()));
-        } catch (URISyntaxException e) {
-            log.debug("Unable to build deviceID for device {} ", this, e);
+        if (deviceId == null) {
+            try {
+                deviceId = DeviceId.deviceId(new URI("netconf", ipAddress.toString() + ":" + port, null));
+            } catch (URISyntaxException e) {
+                throw new IllegalArgumentException("Unable to build deviceID for device " + toString(), e);
+            }
         }
-        return null;
+        return deviceId;
     }
 
     @Override

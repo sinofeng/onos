@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Open Networking Laboratory
+ * Copyright 2014-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.onosproject.net.topology.impl;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.onlab.junit.TestUtils;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.ElementId;
 import org.onosproject.net.Host;
@@ -25,7 +26,7 @@ import org.onosproject.net.HostId;
 import org.onosproject.net.Path;
 import org.onosproject.net.host.HostServiceAdapter;
 import org.onosproject.net.provider.ProviderId;
-import org.onosproject.net.topology.LinkWeight;
+import org.onosproject.net.topology.LinkWeigher;
 import org.onosproject.net.topology.PathService;
 import org.onosproject.net.topology.Topology;
 import org.onosproject.net.topology.TopologyServiceAdapter;
@@ -53,11 +54,11 @@ public class PathManagerTest {
     private FakeHostMgr fakeHostMgr = new FakeHostMgr();
 
     @Before
-    public void setUp() {
+    public void setUp() throws Exception {
         mgr = new PathManager();
         service = mgr;
-        mgr.topologyService = fakeTopoMgr;
-        mgr.hostService = fakeHostMgr;
+        TestUtils.setField(mgr, "topologyService", fakeTopoMgr);
+        TestUtils.setField(mgr, "hostService", fakeHostMgr);
         mgr.activate();
     }
 
@@ -139,12 +140,14 @@ public class PathManagerTest {
         Set<Path> paths = new HashSet<>();
 
         @Override
-        public Set<Path> getPaths(Topology topology, DeviceId src, DeviceId dst) {
+        public Set<Path> getPaths(Topology topology, DeviceId src,
+                                  DeviceId dst) {
             return paths;
         }
 
         @Override
-        public Set<Path> getPaths(Topology topology, DeviceId src, DeviceId dst, LinkWeight weight) {
+        public Set<Path> getPaths(Topology topology, DeviceId src,
+                                  DeviceId dst, LinkWeigher weight) {
             return paths;
         }
     }

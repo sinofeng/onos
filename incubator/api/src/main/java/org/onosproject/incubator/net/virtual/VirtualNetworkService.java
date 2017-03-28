@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,27 @@
 package org.onosproject.incubator.net.virtual;
 
 import com.google.common.annotations.Beta;
+import org.onlab.osgi.ServiceDirectory;
+import org.onosproject.core.ApplicationId;
+import org.onosproject.event.ListenerService;
 import org.onosproject.net.DeviceId;
 
+import java.util.HashSet;
 import java.util.Set;
+
+import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Service for querying virtual network inventory.
  */
 @Beta
-public interface VirtualNetworkService {
+public interface VirtualNetworkService
+        extends ListenerService<VirtualNetworkEvent, VirtualNetworkListener> {
+
+    /**
+     * The topic used for obtaining globally unique ids.
+     */
+    String VIRTUAL_NETWORK_TOPIC = "virtual-network-ids";
 
     /**
      * Returns a collection of all virtual networks created on behalf of the
@@ -46,6 +58,15 @@ public interface VirtualNetworkService {
     Set<VirtualDevice> getVirtualDevices(NetworkId networkId);
 
     /**
+     * Returns a collection of all virtual hosts in the specified network.
+     *
+     * @param networkId network identifier
+     * @return collection of hosts
+     * @throws org.onlab.util.ItemNotFoundException if no such network found
+     */
+    Set<VirtualHost> getVirtualHosts(NetworkId networkId);
+
+    /**
      * Returns collection of all virtual links in the specified network.
      *
      * @param networkId network identifier
@@ -55,7 +76,9 @@ public interface VirtualNetworkService {
     Set<VirtualLink> getVirtualLinks(NetworkId networkId);
 
     /**
-     * Returns list of all virtual ports of the specified device.
+     * Returns list of all virtual ports of the specified device. If the
+     * device identifier is null then all of the virtual ports in the specified
+     * network will be returned.
      *
      * @param networkId network identifier
      * @param deviceId  device identifier
@@ -63,6 +86,32 @@ public interface VirtualNetworkService {
      * @throws org.onlab.util.ItemNotFoundException if no such network found
      */
     Set<VirtualPort> getVirtualPorts(NetworkId networkId, DeviceId deviceId);
+
+    /**
+     * Returns list of physical device identifier mapping with the virtual
+     * device in the specified network. The physical devices are specified by
+     * port mapping mechanism.
+     *
+     * @param networkId network identifier
+     * @param virtualDevice the virtual device
+     * @return collection of the specified device's identifier
+     */
+    default Set<DeviceId> getPhysicalDevices(NetworkId networkId,
+                                             VirtualDevice virtualDevice) {
+        checkNotNull(networkId, "Network ID cannot be null");
+        checkNotNull(virtualDevice, "Virtual device cannot be null");
+        Set<VirtualPort> virtualPortSet =
+                getVirtualPorts(networkId, virtualDevice.id());
+        Set<DeviceId> physicalDeviceSet = new HashSet<>();
+
+        virtualPortSet.forEach(virtualPort -> {
+            if (virtualPort.realizedBy() != null) {
+                physicalDeviceSet.add(virtualPort.realizedBy().deviceId());
+            }
+        });
+
+        return physicalDeviceSet;
+    }
 
     /**
      * Returns implementation of the specified service class for operating
@@ -75,6 +124,7 @@ public interface VirtualNetworkService {
      * <li>{@link org.onosproject.net.host.HostService}</li>
      * <li>{@link org.onosproject.net.topology.TopologyService}</li>
      * <li>{@link org.onosproject.net.topology.PathService}</li>
+     * <li>{@link org.onosproject.net.packet.PacketService}</li>
      * <li>{@link org.onosproject.net.flow.FlowRuleService}</li>
      * <li>{@link org.onosproject.net.flowobjective.FlowObjectiveService}</li>
      * <li>{@link org.onosproject.net.intent.IntentService}</li>
@@ -89,4 +139,18 @@ public interface VirtualNetworkService {
      */
     <T> T get(NetworkId networkId, Class<T> serviceClass);
 
+    /**
+     * Returns service directory.
+     *
+     * @return a service directory
+     */
+    ServiceDirectory getServiceDirectory();
+
+    /**
+     * Returns the application identifier for a virtual network.
+     *
+     * @param networkId network identifier
+     * @return an representative application identifier for a virtual network
+     */
+    ApplicationId getVirtualNetworkApplicationId(NetworkId networkId);
 }

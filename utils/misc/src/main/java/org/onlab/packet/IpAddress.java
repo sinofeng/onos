@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2014-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,16 @@
  */
 package org.onlab.packet;
 
-import java.net.InetAddress;
+import com.google.common.net.InetAddresses;
+import com.google.common.primitives.UnsignedBytes;
+
 import java.net.Inet4Address;
 import java.net.Inet6Address;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Objects;
-import com.google.common.net.InetAddresses;
-import com.google.common.primitives.UnsignedBytes;
 
 
 /**
@@ -33,7 +35,7 @@ public class IpAddress implements Comparable<IpAddress> {
     private static final int BIT_MASK = 0x000000ff;
 
     // IP Versions
-    public enum Version { INET, INET6 };
+    public enum Version { INET, INET6 }
 
     // lengths of address, in bytes
     public static final int INET_BYTE_LENGTH = 4;
@@ -67,6 +69,14 @@ public class IpAddress implements Comparable<IpAddress> {
             this.octets = null;
             break;
         }
+    }
+
+    /**
+     * Default constructor for Kryo serialization.
+     */
+    protected IpAddress() {
+        this.version = null;
+        this.octets = null;
     }
 
     /**
@@ -139,6 +149,20 @@ public class IpAddress implements Comparable<IpAddress> {
      */
     public byte[] toOctets() {
         return Arrays.copyOf(octets, octets.length);
+    }
+
+    /**
+     * Returns the IP address as InetAddress.
+     *
+     * @return InetAddress
+     */
+    public InetAddress toInetAddress() {
+        try {
+            return InetAddress.getByAddress(octets);
+        } catch (UnknownHostException e) {
+            // Should never reach here
+            return null;
+        }
     }
 
     /**
@@ -312,6 +336,17 @@ public class IpAddress implements Comparable<IpAddress> {
      */
     public boolean isSelfAssigned() {
         return isIp4() && octets[0] == (byte) 169;
+    }
+
+    /**
+     * Check if this IP address is a multicast address.
+     *
+     * @return true if this address a multicast address
+     */
+    public boolean isMulticast() {
+        return isIp4() ?
+                Ip4Prefix.IPV4_MULTICAST_PREFIX.contains(this.getIp4Address()) :
+                Ip6Prefix.IPV6_MULTICAST_PREFIX.contains(this.getIp6Address());
     }
 
     @Override

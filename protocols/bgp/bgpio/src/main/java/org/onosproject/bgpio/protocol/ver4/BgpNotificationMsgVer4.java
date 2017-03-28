@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -122,11 +122,11 @@ class BgpNotificationMsgVer4 implements BgpNotificationMsg {
         private BgpHeader bgpHeader;
         private boolean isErrorCodeSet = false;
         private boolean isErrorSubCodeSet = false;
-        private boolean isBGPHeaderSet = false;
+        private boolean isBgpHeaderSet = false;
 
         @Override
         public BgpNotificationMsg build() throws BgpParseException {
-            BgpHeader bgpHeader = this.isBGPHeaderSet ? this.bgpHeader : DEFAULT_MESSAGE_HEADER;
+            BgpHeader bgpHeader = this.isBgpHeaderSet ? this.bgpHeader : DEFAULT_MESSAGE_HEADER;
             if (!this.isErrorCodeSet) {
                 throw new BgpParseException("Error code must be present");
             }
@@ -198,7 +198,7 @@ class BgpNotificationMsgVer4 implements BgpNotificationMsg {
                 cb.writeBytes(message.data);
             }
 
-            //Update message length field in notification message
+            log.debug("Update message length field in notification message");
             int length = cb.writerIndex() - msgStartIndex;
             cb.setShort(headerLenIndex, (short) length);
             message.bgpHeader.setLength((short) length);

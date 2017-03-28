@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ public final class DefaultPacketRequest implements PacketRequest {
 
     /**
      * Creates a new packet request.
-     *  @param selector  traffic selector
+     * @param selector  traffic selector
      * @param priority  intercept priority
      * @param appId     application id
      * @param nodeId    identifier of node where request originated
@@ -105,7 +105,7 @@ public final class DefaultPacketRequest implements PacketRequest {
                 .add("priority", priority)
                 .add("appId", appId)
                 .add("nodeId", nodeId)
-                .add("applies to", deviceId.isPresent() ? deviceId.get() : "all")
+                .add("applies to", deviceId.map(DeviceId::toString).orElse("all"))
                 .toString();
     }
 }

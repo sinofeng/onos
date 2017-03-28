@@ -2,7 +2,7 @@
 #set( $symbol_dollar = '$' )
 #set( $symbol_escape = '\' )
 /*
- * Copyright 2014,2015 Open Networking Laboratory
+ * Copyright ${year}-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import org.onosproject.ui.UiTopoOverlay;
 import org.onosproject.ui.topo.ButtonId;
 import org.onosproject.ui.topo.PropertyPanel;
 import org.onosproject.ui.topo.TopoConstants.CoreButtons;
-import org.onosproject.ui.topo.TopoConstants.Glyphs;
+import org.onosproject.ui.GlyphConstants;
 
 import static org.onosproject.ui.topo.TopoConstants.Properties.FLOWS;
 import static org.onosproject.ui.topo.TopoConstants.Properties.INTENTS;
@@ -56,7 +56,7 @@ public class AppUiTopovOverlay extends UiTopoOverlay {
     @Override
     public void modifySummary(PropertyPanel pp) {
         pp.title(MY_TITLE)
-                .typeId(Glyphs.CROWN)
+                .typeId(GlyphConstants.CROWN)
                 .removeProps(
                         TOPOLOGY_SSCS,
                         INTENTS,
@@ -76,7 +76,8 @@ public class AppUiTopovOverlay extends UiTopoOverlay {
                 .addButton(BAR_BUTTON);
 
         pp.removeButtons(CoreButtons.SHOW_PORT_VIEW)
-                .removeButtons(CoreButtons.SHOW_GROUP_VIEW);
+                .removeButtons(CoreButtons.SHOW_GROUP_VIEW)
+                .removeButtons(CoreButtons.SHOW_METER_VIEW);
     }
 
 }

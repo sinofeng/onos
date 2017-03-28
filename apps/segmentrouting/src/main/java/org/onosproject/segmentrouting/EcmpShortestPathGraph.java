@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import java.util.List;
 
 /**
  * This class creates bandwidth constrained breadth first tree and returns paths
- * from root Device to leaf Devices which satisfies the bandwidth condition. If
+ * from root Device to leaf Devices (target devices) which satisfies the bandwidth condition. If
  * bandwidth parameter is not specified, the normal breadth first tree will be
  * calculated. The paths are snapshot paths at the point of the class
  * instantiation.
@@ -302,12 +302,15 @@ public class EcmpShortestPathGraph {
     }
 
     /**
-     * Return the complete info of the computed ECMP paths for each Device
-     * learned in multiple iterations from the root Device.
+     * Returns the complete info of the computed ECMP paths for each target device
+     * learned in multiple iterations from the root Device. The computed info
+     * returned is per iteration (Integer key of outer HashMap). In each
+     * iteration, for the target devices reached (DeviceId key of inner HashMap),
+     * the ECMP paths are detailed (2D array).
      *
-     * @return the hash table of Devices learned in multiple Dijkstra
+     * @return the hash table of target Devices learned in multiple Dijkstra
      *         iterations and corresponding ECMP paths in terms of Devices to
-     *         be traversed to it from the root Device
+     *         be traversed (via) from the root Device to the target Device
      */
     public HashMap<Integer, HashMap<DeviceId,
             ArrayList<ArrayList<DeviceId>>>> getAllLearnedSwitchesAndVia() {
@@ -342,8 +345,13 @@ public class EcmpShortestPathGraph {
 
     private Link copyDefaultLink(Link link) {
         DefaultLink src = (DefaultLink) link;
-        DefaultLink defaultLink = new DefaultLink(src.providerId(), src.src(),
-                src.dst(), src.type(), src.annotations());
+        DefaultLink defaultLink = DefaultLink.builder()
+                .providerId(src.providerId())
+                .src(src.src())
+                .dst(src.dst())
+                .type(src.type())
+                .annotations(src.annotations())
+                .build();
 
         return defaultLink;
     }
@@ -353,10 +361,12 @@ public class EcmpShortestPathGraph {
         StringBuilder sBuilder = new StringBuilder();
         for (Device device: srManager.deviceService.getDevices()) {
             if (device.id() != rootDevice) {
-                sBuilder.append("Paths from" + rootDevice + " to " + device.id() + "\r\n");
+                sBuilder.append("\r\n Paths from " + rootDevice + " to "
+                                + device.id() + "\r\n");
                 ArrayList<Path> paths = getECMPPaths(device.id());
                 if (paths != null) {
                     for (Path path : paths) {
+                        sBuilder.append("\r\n == "); // equal cost paths delimiter
                         for (Link link : path.links()) {
                             sBuilder.append(" : " + link.src() + " -> " + link.dst());
                         }

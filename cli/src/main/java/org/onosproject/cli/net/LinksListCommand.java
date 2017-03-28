@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Open Networking Laboratory
+ * Copyright 2014-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package org.onosproject.cli.net;
 
 import org.apache.karaf.shell.commands.Argument;
 import org.apache.karaf.shell.commands.Command;
+import org.onlab.util.Tools;
 import org.onosproject.cli.AbstractShellCommand;
 import org.onosproject.net.Link;
 import org.onosproject.net.link.LinkService;
@@ -25,8 +26,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-
 import static org.onosproject.net.DeviceId.deviceId;
+import static org.onosproject.net.LinkKey.linkKey;
+
+import java.util.Comparator;
 
 /**
  * Lists all infrastructure links.
@@ -35,7 +38,7 @@ import static org.onosproject.net.DeviceId.deviceId;
          description = "Lists all infrastructure links")
 public class LinksListCommand extends AbstractShellCommand {
 
-    private static final String FMT = "src=%s/%s, dst=%s/%s, type=%s, state=%s%s";
+    private static final String FMT = "src=%s/%s, dst=%s/%s, type=%s, state=%s%s, expected=%s";
     private static final String COMPACT = "%s/%s-%s/%s";
 
     @Argument(index = 0, name = "uri", description = "Device ID",
@@ -50,9 +53,11 @@ public class LinksListCommand extends AbstractShellCommand {
         if (outputJson()) {
             print("%s", json(this, links));
         } else {
-            for (Link link : links) {
+            Tools.stream(links)
+                .sorted(Comparator.comparing(link -> linkKey(link).toString()))
+                .forEach(link -> {
                 print(linkString(link));
-            }
+            });
         }
     }
 
@@ -93,7 +98,8 @@ public class LinksListCommand extends AbstractShellCommand {
         return String.format(FMT, link.src().deviceId(), link.src().port(),
                              link.dst().deviceId(), link.dst().port(),
                              link.type(), link.state(),
-                             annotations(link.annotations()));
+                             annotations(link.annotations()),
+                             link.isExpected());
     }
 
     /**

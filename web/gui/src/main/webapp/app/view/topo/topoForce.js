@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,19 +24,20 @@
 
     // injected refs
     var $log, $timeout, fs, sus, ts, flash, wss, tov,
-        tis, tms, td3, tss, tts, tos, fltr, tls, uplink, svg;
+        tis, tms, td3, tss, tts, tos, fltr, tls, uplink, svg, tpis;
 
     // configuration
     var linkConfig = {
         light: {
-            baseColor: '#666',
+            baseColor: '#939598',
             inColor: '#66f',
             outColor: '#f00'
         },
         dark: {
-            baseColor: '#aaa',
+            // TODO : theme
+            baseColor: '#939598',
             inColor: '#66f',
-            outColor: '#f66'
+            outColor: '#f00'
         },
         inWidth: 12,
         outWidth: 10
@@ -230,7 +231,7 @@
             d = result.ldata;
 
         if (bad) {
-            //logicError(bad + ': ' + link.id);
+            $log.debug(bad + ': ' + link.id);
             return;
         }
 
@@ -255,10 +256,10 @@
         var result = tms.findLink(data, 'update'),
             bad = result.badLogic;
         if (bad) {
-            //logicError(bad + ': ' + link.id);
+            $log.debug(bad + ': ' + link.id);
             return;
         }
-        result.updateWith(link);
+        result.updateWith(data);
     }
 
     function removeLink(data) {
@@ -323,7 +324,8 @@
             .domain([1, 12])
             .range([widthRatio, 12 * widthRatio])
             .clamp(true),
-        allLinkTypes = 'direct indirect optical tunnel';
+        allLinkTypes = 'direct indirect optical tunnel',
+        allLinkSubTypes = 'inactive not-permitted';
 
     function restyleLinkElement(ldata, immediate) {
         // this fn's job is to look at raw links and decide what svg classes
@@ -333,9 +335,10 @@
             type = ldata.type(),
             lw = ldata.linkWidth(),
             online = ldata.online(),
+            modeCls = ldata.expected() ? 'inactive' : 'not-permitted',
             delay = immediate ? 0 : 1000;
 
-        // FIXME: understand why el is sometimes undefined on addLink events...
+        // NOTE: understand why el is sometimes undefined on addLink events...
         // Investigated:
         // el is undefined when it's a reverse link that is being added.
         // updateLinks (which sets ldata.el) isn't called before this is called.
@@ -343,7 +346,8 @@
         // a more efficient way to fix it.
         if (el && !el.empty()) {
             el.classed('link', true);
-            el.classed('inactive', !online);
+            el.classed(allLinkSubTypes, false);
+            el.classed(modeCls, !online);
             el.classed(allLinkTypes, false);
             if (type) {
                 el.classed(type, true);
@@ -452,10 +456,17 @@
             ll;
 
         // if we are not clearing the position data (unpinning),
-        // attach the x, y, longitude, latitude...
+        // attach the x, y, (and equivalent longitude, latitude)...
         if (!clearPos) {
             ll = tms.lngLatFromCoord([d.x, d.y]);
-            metaUi = {x: d.x, y: d.y, lng: ll[0], lat: ll[1]};
+            metaUi = {
+                x: d.x,
+                y: d.y,
+                equivLoc: {
+                    lng: ll[0],
+                    lat: ll[1]
+                }
+            };
         }
         d.metaUi = metaUi;
         wss.sendEvent('updateMeta', {
@@ -575,6 +586,13 @@
         });
         // back to normal after 2 seconds...
         $timeout(updateLinks, 2000);
+    }
+
+    function resetAllLocations() {
+        tms.resetAllLocations();
+        updateNodes();
+        tick(); // force nodes to be redrawn in their new locations
+        flash.flash('Reset Node Locations');
     }
 
     // ==========================================
@@ -826,7 +844,7 @@
             transform: function (d) {
                 var lnk = tms.findLinkById(d.key);
                 if (lnk) {
-                    return td3.transformLabel(lnk.position);
+                    return td3.transformLabel(lnk.position, d.key);
                 }
             }
         }
@@ -953,7 +971,7 @@
             node: function () { return node; },
             zoomingOrPanning: zoomingOrPanning,
             updateDeviceColors: td3.updateDeviceColors,
-            deselectLink: tls.deselectLink
+            deselectAllLinks: tls.deselectAllLinks
         };
     }
 
@@ -1022,6 +1040,11 @@
         };
     }
 
+    function updateLinksAndNodes() {
+        updateLinks();
+        updateNodes();
+    }
+
     angular.module('ovTopo')
     .factory('TopoForceService',
         ['$log', '$timeout', 'FnService', 'SvgUtilService',
@@ -1029,9 +1052,10 @@
             'TopoOverlayService', 'TopoInstService', 'TopoModelService',
             'TopoD3Service', 'TopoSelectService', 'TopoTrafficService',
             'TopoObliqueService', 'TopoFilterService', 'TopoLinkService',
+            'TopoProtectedIntentsService',
 
         function (_$log_, _$timeout_, _fs_, _sus_, _ts_, _flash_, _wss_, _tov_,
-                  _tis_, _tms_, _td3_, _tss_, _tts_, _tos_, _fltr_, _tls_) {
+                  _tis_, _tms_, _td3_, _tss_, _tts_, _tos_, _fltr_, _tls_, _tpis_) {
             $log = _$log_;
             $timeout = _$timeout_;
             fs = _fs_;
@@ -1048,11 +1072,9 @@
             tos = _tos_;
             fltr = _fltr_;
             tls = _tls_;
+            tpis = _tpis_;
 
-            var themeListener = ts.addListener(function () {
-                updateLinks();
-                updateNodes();
-            });
+            ts.addListener(updateLinksAndNodes);
 
             // forceG is the SVG group to display the force layout in
             // uplink is the api from the main topo source file
@@ -1073,6 +1095,7 @@
                 td3.initD3(mkD3Api());
                 tss.initSelect(mkSelectApi());
                 tts.initTraffic(mkTrafficApi());
+                tpis.initProtectedIntents(mkTrafficApi());
                 tos.initOblique(mkObliqueApi(uplink, fltr));
                 fltr.initFilter(mkFilterApi());
                 tls.initLink(mkLinkApi(svg, uplink), td3);
@@ -1116,12 +1139,12 @@
                 tls.destroyLink();
                 tos.destroyOblique();
                 tts.destroyTraffic();
+                tpis.destroyProtectedIntents();
                 tss.destroySelect();
                 td3.destroyD3();
                 tms.destroyModel();
                 // note: no need to destroy overlay service
-                ts.removeListener(themeListener);
-                themeListener = null;
+                ts.removeListener(updateLinksAndNodes);
 
                 // clean up the DOM
                 svg.selectAll('g').remove();
@@ -1166,6 +1189,7 @@
                 showMastership: showMastership,
                 showBadLinks: showBadLinks,
 
+                resetAllLocations: resetAllLocations,
                 addDevice: addDevice,
                 updateDevice: updateDevice,
                 removeDevice: removeDevice,

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,17 @@ package org.onosproject.incubator.net.intf;
 
 import com.google.common.annotations.Beta;
 import com.google.common.base.MoreObjects;
-import com.google.common.collect.Sets;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Lists;
 import org.onlab.packet.MacAddress;
 import org.onlab.packet.VlanId;
 import org.onosproject.net.ConnectPoint;
 import org.onosproject.net.host.InterfaceIpAddress;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -38,41 +41,56 @@ public class Interface {
 
     private final String name;
     private final ConnectPoint connectPoint;
-    private final Set<InterfaceIpAddress> ipAddresses;
+    private final List<InterfaceIpAddress> ipAddresses;
     private final MacAddress macAddress;
+    // TODO: Deprecate this due to ambiguity
     private final VlanId vlan;
+    private final VlanId vlanUntagged;
+    private final Set<VlanId> vlanTagged;
+    private final VlanId vlanNative;
 
     /**
      * Creates new Interface with the provided configuration.
      *
      * @param name name of the interface
      * @param connectPoint the connect point this interface maps to
-     * @param ipAddresses Set of IP addresses
+     * @param ipAddresses list of IP addresses
      * @param macAddress MAC address
      * @param vlan VLAN ID
      */
     public Interface(String name, ConnectPoint connectPoint,
-                     Set<InterfaceIpAddress> ipAddresses,
+                     List<InterfaceIpAddress> ipAddresses,
                      MacAddress macAddress, VlanId vlan) {
-        this.name = name == null ? NO_INTERFACE_NAME : name;
-        this.connectPoint = checkNotNull(connectPoint);
-        this.ipAddresses = ipAddresses == null ? Sets.newHashSet() : ipAddresses;
-        this.macAddress = macAddress == null ? MacAddress.NONE : macAddress;
-        this.vlan = vlan == null ? VlanId.NONE : vlan;
+        this(name, connectPoint, ipAddresses, macAddress, vlan, null, null, null);
     }
 
     /**
      * Creates new Interface with the provided configuration.
      *
+     * @param name name of the interface
      * @param connectPoint the connect point this interface maps to
-     * @param ipAddresses Set of IP addresses
+     * @param ipAddresses list of IP addresses
      * @param macAddress MAC address
      * @param vlan VLAN ID
+     * @param vlanUntagged untagged VLAN.
+     *                     Cannot be used with vlanTagged or vlanNative.
+     * @param vlanTagged   tagged VLANs.
+     *                     Cannot be used with vlanUntagged.
+     * @param vlanNative   native vLAN. Optional.
+     *                     Can only be used when vlanTagged is specified. Cannot be used with vlanUntagged.
      */
-    public Interface(ConnectPoint connectPoint,
-                     Set<InterfaceIpAddress> ipAddresses,
-                     MacAddress macAddress, VlanId vlan) {
-        this(NO_INTERFACE_NAME, connectPoint, ipAddresses, macAddress, vlan);
+    public Interface(String name, ConnectPoint connectPoint,
+                     List<InterfaceIpAddress> ipAddresses,
+                     MacAddress macAddress, VlanId vlan,
+                     VlanId vlanUntagged, Set<VlanId> vlanTagged, VlanId vlanNative) {
+        this.name = name == null ? NO_INTERFACE_NAME : name;
+        this.connectPoint = checkNotNull(connectPoint);
+        this.ipAddresses = ipAddresses == null ? Lists.newArrayList() : ipAddresses;
+        this.macAddress = macAddress == null ? MacAddress.NONE : macAddress;
+        this.vlan = vlan == null ? VlanId.NONE : vlan;
+        this.vlanUntagged = vlanUntagged == null ? VlanId.NONE : vlanUntagged;
+        this.vlanTagged = vlanTagged == null ? ImmutableSet.of() : ImmutableSet.copyOf(vlanTagged);
+        this.vlanNative = vlanNative == null ? VlanId.NONE : vlanNative;
     }
 
     /**
@@ -97,8 +115,20 @@ public class Interface {
      * Retrieves the set of IP addresses that are assigned to the interface.
      *
      * @return the set of interface IP addresses
+     * @deprecated in Falcon release in favour of an ordered list
      */
+    @Deprecated
     public Set<InterfaceIpAddress> ipAddresses() {
+        return ipAddresses.stream().collect(Collectors.toSet());
+    }
+
+    /**
+     * Retrieves a list of IP addresses that are assigned to the interface in
+     * the order that they were configured.
+     *
+     * @return list of IP addresses
+     */
+    public List<InterfaceIpAddress> ipAddressesList() {
         return ipAddresses;
     }
 
@@ -120,6 +150,34 @@ public class Interface {
         return vlan;
     }
 
+    /**
+     * Retrieves the VLAN ID that is assigned to untagged packets.
+     *
+     * @return the VLAN ID
+     */
+    public VlanId vlanUntagged() {
+        return vlanUntagged;
+    }
+
+    /**
+     * Retrieves the set of VLAN IDs that are allowed on this interface.
+     *
+     * @return the VLAN ID
+     */
+    public Set<VlanId> vlanTagged() {
+        return vlanTagged;
+    }
+
+    /**
+     * Retrieves the VLAN ID that is assigned to untagged packets on this
+     * tagged interface.
+     *
+     * @return the VLAN ID
+     */
+    public VlanId vlanNative() {
+        return vlanNative;
+    }
+
     @Override
     public boolean equals(Object other) {
         if (!(other instanceof Interface)) {
@@ -132,12 +190,16 @@ public class Interface {
                 Objects.equals(connectPoint, otherInterface.connectPoint) &&
                 Objects.equals(ipAddresses, otherInterface.ipAddresses) &&
                 Objects.equals(macAddress, otherInterface.macAddress) &&
-                Objects.equals(vlan, otherInterface.vlan);
+                Objects.equals(vlan, otherInterface.vlan) &&
+                Objects.equals(vlanUntagged, otherInterface.vlanUntagged) &&
+                Objects.equals(vlanTagged, otherInterface.vlanTagged) &&
+                Objects.equals(vlanNative, otherInterface.vlanNative);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(connectPoint, name, ipAddresses, macAddress, vlan);
+        return Objects.hash(connectPoint, name, ipAddresses, macAddress, vlan,
+                vlanUntagged, vlanTagged, vlanNative);
     }
 
     @Override
@@ -148,6 +210,9 @@ public class Interface {
                 .add("ipAddresses", ipAddresses)
                 .add("macAddress", macAddress)
                 .add("vlan", vlan)
+                .add("vlanUntagged", vlanUntagged)
+                .add("vlanTagged", vlanTagged)
+                .add("vlanNative", vlanNative)
                 .toString();
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,6 @@ public class AlarmTopovOverlay extends UiTopoOverlay {
     private static final String OVERLAY_ID = "alarmsTopo-overlay";
 
     private static final ButtonId ALARM1_BUTTON = new ButtonId("alarm1button");
-    private static final ButtonId ALARM2_BUTTON = new ButtonId("alarm2button");
 
     public AlarmTopovOverlay() {
         super(OVERLAY_ID);
@@ -58,11 +57,11 @@ public class AlarmTopovOverlay extends UiTopoOverlay {
         Map<Alarm.SeverityLevel, Long> countsForDevice = AlarmServiceUtil.lookUpAlarmCounts(deviceId);
         addAlarmCountsProperties(pp, countsForDevice);
 
-        pp.addButton(ALARM1_BUTTON)
-                .addButton(ALARM2_BUTTON);
+        pp.addButton(ALARM1_BUTTON);
 
         pp.removeButtons(CoreButtons.SHOW_PORT_VIEW)
-                .removeButtons(CoreButtons.SHOW_GROUP_VIEW);
+                .removeButtons(CoreButtons.SHOW_GROUP_VIEW)
+                .removeButtons(CoreButtons.SHOW_METER_VIEW);
     }
 
     private void addAlarmCountsProperties(PropertyPanel pp, Map<Alarm.SeverityLevel, Long> countsForDevice) {

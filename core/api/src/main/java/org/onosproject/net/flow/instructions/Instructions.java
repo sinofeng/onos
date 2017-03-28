@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2014-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,13 +24,10 @@ import org.onlab.packet.TpPort;
 import org.onlab.packet.VlanId;
 import org.onosproject.core.GroupId;
 import org.onosproject.net.DeviceId;
-import org.onosproject.net.IndexedLambda;
 import org.onosproject.net.Lambda;
 import org.onosproject.net.OchSignal;
 import org.onosproject.net.OduSignalId;
 import org.onosproject.net.PortNumber;
-import org.onosproject.net.flow.instructions.L0ModificationInstruction.L0SubType;
-import org.onosproject.net.flow.instructions.L0ModificationInstruction.ModLambdaInstruction;
 import org.onosproject.net.flow.instructions.L0ModificationInstruction.ModOchSignalInstruction;
 import org.onosproject.net.flow.instructions.L1ModificationInstruction.ModOduSignalIdInstruction;
 import org.onosproject.net.flow.instructions.L3ModificationInstruction.L3SubType;
@@ -54,6 +51,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
  */
 public final class Instructions {
 
+    private static final String SEPARATOR = ":";
+
     // Ban construction
     private Instructions() {}
 
@@ -67,16 +66,6 @@ public final class Instructions {
     public static OutputInstruction createOutput(final PortNumber number) {
         checkNotNull(number, "PortNumber cannot be null");
         return new OutputInstruction(number);
-    }
-
-    /**
-     * Creates a drop instruction.
-     *
-     * @return drop instruction
-     */
-    @Deprecated
-    public static DropInstruction createDrop() {
-        return new DropInstruction();
     }
 
     /**
@@ -111,6 +100,12 @@ public final class Instructions {
         return new SetQueueInstruction(queueId, port);
     }
 
+    /**
+     * Creates a meter instruction.
+     *
+     * @param meterId Meter Id
+     * @return meter instruction
+     */
     public static MeterInstruction meterTraffic(final MeterId meterId) {
         checkNotNull(meterId, "meter id cannot be null");
         return new MeterInstruction(meterId);
@@ -125,9 +120,7 @@ public final class Instructions {
     public static L0ModificationInstruction modL0Lambda(Lambda lambda) {
         checkNotNull(lambda, "L0 OCh signal cannot be null");
 
-        if (lambda instanceof IndexedLambda) {
-            return new ModLambdaInstruction(L0SubType.LAMBDA, (short) ((IndexedLambda) lambda).index());
-        } else if (lambda instanceof OchSignal) {
+        if (lambda instanceof OchSignal) {
             return new ModOchSignalInstruction((OchSignal) lambda);
         } else {
             throw new UnsupportedOperationException(String.format("Unsupported type: %s", lambda));
@@ -340,7 +333,7 @@ public final class Instructions {
      * @return a L2 modification.
      */
     public static Instruction pushMpls() {
-        return new L2ModificationInstruction.PushHeaderInstructions(
+        return new L2ModificationInstruction.ModMplsHeaderInstruction(
                 L2ModificationInstruction.L2SubType.MPLS_PUSH,
                                           EthType.EtherType.MPLS_UNICAST.ethType());
     }
@@ -351,7 +344,7 @@ public final class Instructions {
      * @return a L2 modification.
      */
     public static Instruction popMpls() {
-        return new L2ModificationInstruction.PushHeaderInstructions(
+        return new L2ModificationInstruction.ModMplsHeaderInstruction(
                 L2ModificationInstruction.L2SubType.MPLS_POP,
                 EthType.EtherType.MPLS_UNICAST.ethType());
     }
@@ -364,7 +357,7 @@ public final class Instructions {
      */
     public static Instruction popMpls(EthType etherType) {
         checkNotNull(etherType, "Ethernet type cannot be null");
-        return new L2ModificationInstruction.PushHeaderInstructions(
+        return new L2ModificationInstruction.ModMplsHeaderInstruction(
                 L2ModificationInstruction.L2SubType.MPLS_POP, etherType);
     }
 
@@ -374,7 +367,7 @@ public final class Instructions {
      * @return a L2 modification
      */
     public static Instruction popVlan() {
-        return new L2ModificationInstruction.PopVlanInstruction(
+        return new L2ModificationInstruction.ModVlanHeaderInstruction(
                 L2ModificationInstruction.L2SubType.VLAN_POP);
     }
 
@@ -384,9 +377,21 @@ public final class Instructions {
      * @return a L2 modification
      */
     public static Instruction pushVlan() {
-        return new L2ModificationInstruction.PushHeaderInstructions(
+        return new L2ModificationInstruction.ModVlanHeaderInstruction(
                 L2ModificationInstruction.L2SubType.VLAN_PUSH,
                 EthType.EtherType.VLAN.ethType());
+    }
+
+    /**
+     * Creates a push VLAN header instruction using the supplied Ethernet type.
+     *
+     * @param ethType the Ethernet type to use
+     * @return a L2 modification
+     */
+    public static Instruction pushVlan(EthType ethType) {
+        return new L2ModificationInstruction.ModVlanHeaderInstruction(
+                L2ModificationInstruction.L2SubType.VLAN_PUSH,
+                ethType);
     }
 
     /**
@@ -427,36 +432,10 @@ public final class Instructions {
      *
      * @param port the TCP port number to modify to
      * @return a L4 modification
-     * @deprecated in Drake release
-     */
-    @Deprecated
-    public static L4ModificationInstruction modTcpSrc(short port) {
-       checkNotNull(port, "Src TCP port cannot be null");
-       return new ModTransportPortInstruction(L4SubType.TCP_SRC, TpPort.tpPort(port));
-    }
-
-    /**
-     * Creates a TCP src modification.
-     *
-     * @param port the TCP port number to modify to
-     * @return a L4 modification
      */
     public static L4ModificationInstruction modTcpSrc(TpPort port) {
        checkNotNull(port, "Src TCP port cannot be null");
        return new ModTransportPortInstruction(L4SubType.TCP_SRC, port);
-    }
-
-    /**
-     * Creates a TCP dst modification.
-     *
-     * @param port the TCP port number to modify to
-     * @return a L4 modification
-     * @deprecated in Drake release
-     */
-    @Deprecated
-    public static L4ModificationInstruction modTcpDst(short port) {
-        checkNotNull(port, "Dst TCP port cannot be null");
-        return new ModTransportPortInstruction(L4SubType.TCP_DST, TpPort.tpPort(port));
     }
 
     /**
@@ -475,36 +454,10 @@ public final class Instructions {
      *
      * @param port the UDP port number to modify to
      * @return a L4 modification
-     * @deprecated in Drake release
-     */
-    @Deprecated
-    public static L4ModificationInstruction modUdpSrc(short port) {
-        checkNotNull(port, "Src UDP port cannot be null");
-        return new ModTransportPortInstruction(L4SubType.UDP_SRC, TpPort.tpPort(port));
-    }
-
-    /**
-     * Creates a UDP src modification.
-     *
-     * @param port the UDP port number to modify to
-     * @return a L4 modification
      */
     public static L4ModificationInstruction modUdpSrc(TpPort port) {
         checkNotNull(port, "Src UDP port cannot be null");
         return new ModTransportPortInstruction(L4SubType.UDP_SRC, port);
-    }
-
-    /**
-     * Creates a UDP dst modification.
-     *
-     * @param port the UDP port number to modify to
-     * @return a L4 modification
-     * @deprecated in Drake release
-     */
-    @Deprecated
-    public static L4ModificationInstruction modUdpDst(short port) {
-        checkNotNull(port, "Dst UDP port cannot be null");
-        return new ModTransportPortInstruction(L4SubType.UDP_DST, TpPort.tpPort(port));
     }
 
     /**
@@ -533,41 +486,6 @@ public final class Instructions {
     }
 
     /**
-     *  Drop instruction.
-     */
-    @Deprecated
-    public static final class DropInstruction implements Instruction {
-
-        private DropInstruction() {}
-
-        @Override
-        public Type type() {
-            return Type.DROP;
-        }
-
-        @Override
-        public String toString() {
-            return toStringHelper(type().toString()).toString();
-        }
-
-        @Override
-        public int hashCode() {
-            return type().ordinal();
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj) {
-                return true;
-            }
-            if (obj instanceof DropInstruction) {
-                return true;
-            }
-            return false;
-        }
-    }
-
-    /**
      *  No Action instruction.
      */
     public static final class NoActionInstruction implements Instruction {
@@ -581,7 +499,7 @@ public final class Instructions {
 
         @Override
         public String toString() {
-            return toStringHelper(type().toString()).toString();
+            return type().toString();
         }
 
         @Override
@@ -619,10 +537,10 @@ public final class Instructions {
         public Type type() {
             return Type.OUTPUT;
         }
+
         @Override
         public String toString() {
-            return toStringHelper(type().toString())
-                    .add("port", port).toString();
+            return type().toString() + SEPARATOR + port.toString();
         }
 
         @Override
@@ -665,9 +583,7 @@ public final class Instructions {
 
         @Override
         public String toString() {
-            return toStringHelper(type().toString())
-                    .addValue("group ID=0x" + Integer.toHexString(groupId.id()))
-                    .toString();
+            return type().toString() + SEPARATOR + "0x" + Integer.toHexString(groupId.id());
         }
 
         @Override
@@ -770,8 +686,7 @@ public final class Instructions {
 
         @Override
         public String toString() {
-            return toStringHelper(type().toString())
-                    .add("meter ID", meterId.id()).toString();
+            return type().toString() + SEPARATOR + meterId.id();
         }
 
         @Override
@@ -814,8 +729,7 @@ public final class Instructions {
 
         @Override
         public String toString() {
-            return toStringHelper(type().toString())
-                    .add("tableId", this.tableId).toString();
+            return type().toString() + SEPARATOR + this.tableId;
         }
 
         @Override
@@ -864,10 +778,9 @@ public final class Instructions {
 
         @Override
         public String toString() {
-            return toStringHelper(type().toString())
-                    .add("metadata", Long.toHexString(this.metadata))
-                    .add("metadata mask", Long.toHexString(this.metadataMask))
-                    .toString();
+            return type().toString() + SEPARATOR +
+                    Long.toHexString(this.metadata) + "/" +
+                    Long.toHexString(this.metadataMask);
         }
 
         @Override
@@ -917,10 +830,7 @@ public final class Instructions {
 
         @Override
         public String toString() {
-            return toStringHelper(type().toString())
-                    .add("extension", extensionTreatment)
-                    .add("deviceId", deviceId)
-                    .toString();
+            return type().toString() + SEPARATOR + deviceId + "/" + extensionTreatment;
         }
 
         @Override

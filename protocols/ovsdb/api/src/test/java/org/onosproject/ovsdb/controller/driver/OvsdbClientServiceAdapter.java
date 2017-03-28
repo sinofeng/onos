@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,16 +21,22 @@ import com.google.common.util.concurrent.ListenableFuture;
 
 import org.onlab.packet.IpAddress;
 import org.onosproject.net.DeviceId;
+import org.onosproject.net.PortNumber;
 import org.onosproject.net.behaviour.ControllerInfo;
+import org.onosproject.net.behaviour.MirroringStatistics;
+import org.onosproject.net.behaviour.MirroringName;
+import org.onosproject.net.behaviour.QosId;
+import org.onosproject.net.behaviour.QueueId;
 import org.onosproject.ovsdb.controller.OvsdbBridge;
 import org.onosproject.ovsdb.controller.OvsdbClientService;
+import org.onosproject.ovsdb.controller.OvsdbInterface;
+import org.onosproject.ovsdb.controller.OvsdbMirror;
 import org.onosproject.ovsdb.controller.OvsdbNodeId;
 import org.onosproject.ovsdb.controller.OvsdbPort;
-import org.onosproject.ovsdb.controller.OvsdbTunnel;
-import org.onosproject.ovsdb.rfc.message.OperationResult;
+import org.onosproject.ovsdb.controller.OvsdbQos;
+import org.onosproject.ovsdb.controller.OvsdbQueue;
 import org.onosproject.ovsdb.rfc.message.TableUpdates;
 import org.onosproject.ovsdb.rfc.notation.Row;
-import org.onosproject.ovsdb.rfc.notation.UUID;
 import org.onosproject.ovsdb.rfc.operations.Operation;
 import org.onosproject.ovsdb.rfc.schema.DatabaseSchema;
 
@@ -48,8 +54,96 @@ public class OvsdbClientServiceAdapter implements OvsdbClientService {
         return null;
     }
 
+    /**
+     * Creates a mirror port. Mirrors the traffic
+     * that goes to selectDstPort or comes from
+     * selectSrcPort or packets containing selectVlan
+     * to mirrorPort or to all ports that trunk mirrorVlan.
+     *
+     * @param bridgeName the name of the bridge
+     * @param mirror     the OVSDB mirror description
+     * @return true if mirror creation is successful, false otherwise
+     */
     @Override
-    public void createTunnel(IpAddress srcIp, IpAddress dstIp) {
+    public boolean createMirror(String bridgeName, OvsdbMirror mirror) {
+        return true;
+    }
+
+    /**
+     * Gets the Mirror uuid.
+     *
+     * @param mirrorName mirror name
+     * @return mirror uuid, empty if no uuid is found
+     */
+    @Override
+    public String getMirrorUuid(String mirrorName) {
+        return null;
+    }
+
+    /**
+     * Gets mirroring statistics of the device.
+     *
+     * @param deviceId target device id
+     * @return set of mirroring statistics; empty if no mirror is found
+     */
+    @Override
+    public Set<MirroringStatistics> getMirroringStatistics(DeviceId deviceId) {
+        return null;
+    }
+
+    @Override
+    public void applyQos(PortNumber portNumber, String qosId) {
+
+    }
+
+    @Override
+    public void removeQos(PortNumber portNumber) {
+    }
+
+    @Override
+    public boolean createQos(OvsdbQos ovsdbQos) {
+        return false;
+    }
+
+    @Override
+    public void dropQos(QosId qosId) {
+    }
+
+    @Override
+    public OvsdbQos getQos(QosId qosId) {
+        return null;
+    };
+
+    @Override
+    public Set<OvsdbQos> getQoses() {
+      return null;
+    }
+
+    @Override
+    public boolean createQueue(OvsdbQueue queue) {
+        return false;
+    }
+
+    @Override
+    public void dropQueue(QueueId queueId) {
+    }
+
+    @Override
+    public OvsdbQueue getQueue(QueueId queueId) {
+        return null;
+    };
+
+    @Override
+    public Set<OvsdbQueue> getQueues() {
+        return null;
+    }
+    /**
+     * Drops the configuration for mirror.
+     *
+     * @param mirroringName
+     */
+    @Override
+    public void dropMirror(MirroringName mirroringName) {
 
     }
 
@@ -60,17 +154,20 @@ public class OvsdbClientServiceAdapter implements OvsdbClientService {
 
     @Override
     public void dropTunnel(IpAddress srcIp, IpAddress dstIp) {
-
     }
 
     @Override
-    public Set<OvsdbTunnel> getTunnels() {
-        return null;
+    public boolean createInterface(String bridgeName, OvsdbInterface ovsdbIface) {
+        return true;
+    }
+
+    @Override
+    public boolean dropInterface(String name) {
+        return true;
     }
 
     @Override
     public void createBridge(String bridgeName) {
-
     }
 
     @Override
@@ -79,8 +176,12 @@ public class OvsdbClientServiceAdapter implements OvsdbClientService {
     }
 
     @Override
-    public void dropBridge(String bridgeName) {
+    public boolean createBridge(OvsdbBridge ovsdbBridge) {
+        return true;
+    }
 
+    @Override
+    public void dropBridge(String bridgeName) {
     }
 
     @Override
@@ -94,8 +195,8 @@ public class OvsdbClientServiceAdapter implements OvsdbClientService {
     }
 
     @Override
-    public void setControllersWithUUID(UUID bridgeUuid, List<ControllerInfo> controllers) {
-
+    public ControllerInfo localController() {
+        return null;
     }
 
     @Override
@@ -134,32 +235,12 @@ public class OvsdbClientServiceAdapter implements OvsdbClientService {
     }
 
     @Override
-    public String getInterfaceUuid(String portUuid, String portName) {
-        return null;
-    }
-
-    @Override
-    public String getControllerUuid(String controllerName, String controllerTarget) {
-        return null;
-    }
-
-    @Override
-    public String getOvsUuid(String dbName) {
-        return null;
-    }
-
-    @Override
     public ListenableFuture<DatabaseSchema> getOvsdbSchema(String dbName) {
         return null;
     }
 
     @Override
     public ListenableFuture<TableUpdates> monitorTables(String dbName, String id) {
-        return null;
-    }
-
-    @Override
-    public ListenableFuture<List<OperationResult>> transactConfig(String dbName, List<Operation> operations) {
         return null;
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,11 +51,9 @@ import org.onosproject.net.intent.IntentEvent;
 import org.onosproject.net.intent.IntentListener;
 import org.onosproject.net.intent.IntentService;
 import org.onosproject.net.intent.Key;
-import org.onosproject.net.intent.PartitionService;
+import org.onosproject.net.intent.WorkPartitionService;
 import org.onosproject.net.intent.PointToPointIntent;
 import org.onosproject.store.cluster.messaging.ClusterCommunicationService;
-import org.onosproject.store.cluster.messaging.ClusterMessage;
-import org.onosproject.store.cluster.messaging.ClusterMessageHandler;
 import org.onosproject.store.cluster.messaging.MessageSubject;
 import org.osgi.service.component.ComponentContext;
 import org.slf4j.Logger;
@@ -71,6 +69,7 @@ import java.util.TimerTask;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkState;
@@ -140,7 +139,7 @@ public class IntentPerfInstaller {
     protected MastershipService mastershipService;
 
     @Reference(cardinality = MANDATORY_UNARY)
-    protected PartitionService partitionService;
+    protected WorkPartitionService partitionService;
 
     @Reference(cardinality = MANDATORY_UNARY)
     protected ComponentConfigService configService;
@@ -179,14 +178,14 @@ public class IntentPerfInstaller {
         workers = Executors.newFixedThreadPool(DEFAULT_NUM_WORKERS, groupedThreads("onos/intent-perf", "worker-%d"));
 
         // disable flow backups for testing
-        configService.setProperty("org.onosproject.store.flow.impl.NewDistributedFlowRuleStore",
+        configService.setProperty("org.onosproject.store.flow.impl.DistributedFlowRuleStore",
                                   "backupEnabled", "true");
 
         // TODO: replace with shared executor
         messageHandlingExecutor = Executors.newSingleThreadExecutor(
                 groupedThreads("onos/perf", "command-handler"));
 
-        communicationService.addSubscriber(CONTROL, new InternalControl(),
+        communicationService.addSubscriber(CONTROL, String::new, new InternalControl(),
                                            messageHandlingExecutor);
 
         listener = new Listener();
@@ -359,7 +358,7 @@ public class IntentPerfInstaller {
                 .forEach(device -> devices.put(mastershipService.getMasterFor(device.id()), device));
 
         // ensure that we have at least one device per neighbor
-        neighbors.forEach(node -> checkState(devices.get(node).size() > 0,
+        neighbors.forEach(node -> checkState(!devices.get(node).isEmpty(),
                                              "There are no devices for {}", node));
 
         // TODO pull this outside so that createIntent can use it
@@ -372,7 +371,7 @@ public class IntentPerfInstaller {
         for (int count = 0, k = firstKey; count < numberOfKeys; k++) {
             Key key = Key.of(keyPrefix + k, appId);
 
-            NodeId leader = partitionService.getLeader(key);
+            NodeId leader = partitionService.getLeader(key, Key::hash);
             if (!neighbors.contains(leader) || intents.get(leader).size() >= maxKeysPerNode) {
                 // Bail if we are not sending to this node or we have enough for this node
                 continue;
@@ -426,7 +425,7 @@ public class IntentPerfInstaller {
         private Iterable<Intent> subset(Set<Intent> intents) {
             List<Intent> subset = Lists.newArrayList(intents);
             Collections.shuffle(subset);
-            return subset.subList(0, lastCount);
+            return subset.subList(0, Math.min(intents.size(), lastCount));
         }
 
         // Submits the specified intent.
@@ -572,10 +571,9 @@ public class IntentPerfInstaller {
         }
     }
 
-    private class InternalControl implements ClusterMessageHandler {
+    private class InternalControl implements Consumer<String> {
         @Override
-        public void handle(ClusterMessage message) {
-            String cmd = new String(message.payload());
+        public void accept(String cmd) {
             log.info("Received command {}", cmd);
             if (cmd.equals(START)) {
                 startTestRun();

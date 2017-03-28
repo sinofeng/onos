@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,10 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * User interface extension.
+ * Immutable representation of a user interface extension.
+ * <p>
+ * Note that the {@link Builder} class is used to create a user
+ * interface extension instance, and that these instances are immutable.
  */
 public final class UiExtension {
 
@@ -41,21 +44,24 @@ public final class UiExtension {
 
     private final ClassLoader classLoader;
     private final String resourcePath;
-    private final List<UiView> views;
+    private final List<UiView> viewList;
     private final UiMessageHandlerFactory messageHandlerFactory;
     private final UiTopoOverlayFactory topoOverlayFactory;
+    private final UiTopoMapFactory topoMapFactory;
 
     private boolean isValid = true;
 
     // private constructor - only the builder calls this
     private UiExtension(ClassLoader cl, String path, List<UiView> views,
                         UiMessageHandlerFactory mhFactory,
-                        UiTopoOverlayFactory toFactory) {
-        this.classLoader = cl;
-        this.resourcePath = path;
-        this.views = views;
-        this.messageHandlerFactory = mhFactory;
-        this.topoOverlayFactory = toFactory;
+                        UiTopoOverlayFactory toFactory,
+                        UiTopoMapFactory tmFactory) {
+        classLoader = cl;
+        resourcePath = path;
+        viewList = views;
+        messageHandlerFactory = mhFactory;
+        topoOverlayFactory = toFactory;
+        topoMapFactory = tmFactory;
     }
 
 
@@ -83,7 +89,7 @@ public final class UiExtension {
      * @return contributed view descriptors
      */
     public List<UiView> views() {
-        return isValid ? views : ImmutableList.of();
+        return isValid ? viewList : ImmutableList.of();
     }
 
     /**
@@ -115,6 +121,15 @@ public final class UiExtension {
         return topoOverlayFactory;
     }
 
+    /**
+     * Returns the topology map factory, if one was defined.
+     *
+     * @return topology map factory
+     */
+    public UiTopoMapFactory topoMapFactory() {
+        return topoMapFactory;
+    }
+
 
     // Returns the resource input stream from the specified class-loader.
     private InputStream getStream(String path) {
@@ -134,35 +149,36 @@ public final class UiExtension {
         private ClassLoader classLoader;
 
         private String resourcePath = EMPTY;
-        private List<UiView> views = new ArrayList<>();
+        private List<UiView> viewList = new ArrayList<>();
         private UiMessageHandlerFactory messageHandlerFactory = null;
         private UiTopoOverlayFactory topoOverlayFactory = null;
+        private UiTopoMapFactory topoMapFactory = null;
 
         /**
          * Create a builder with the given class loader.
          * Resource path defaults to "".
          * Views defaults to an empty list.
-         * Both Message and TopoOverlay factories default to null.
+         * MessageHandler, TopoOverlay, and TopoMap factories default to null.
          *
          * @param cl    the class loader
          * @param views list of views contributed by this extension
          */
         public Builder(ClassLoader cl, List<UiView> views) {
             checkNotNull(cl, "Must provide a class loader");
-            checkArgument(views.size() > 0, "Must provide at least one view");
-            this.classLoader = cl;
-            this.views = views;
+            checkArgument(!views.isEmpty(), "Must provide at least one view");
+            classLoader = cl;
+            viewList = views;
         }
 
         /**
-         * Set the resource path. That is, path to where the CSS and JS
-         * files are located. This value should
+         * Set the resource path. That is, the path to where the CSS and JS
+         * files are located.
          *
          * @param path resource path
          * @return self, for chaining
          */
         public Builder resourcePath(String path) {
-            this.resourcePath = path == null ? EMPTY : path + SLASH;
+            resourcePath = path == null ? EMPTY : path + SLASH;
             return this;
         }
 
@@ -173,7 +189,7 @@ public final class UiExtension {
          * @return self, for chaining
          */
         public Builder messageHandlerFactory(UiMessageHandlerFactory mhFactory) {
-            this.messageHandlerFactory = mhFactory;
+            messageHandlerFactory = mhFactory;
             return this;
         }
 
@@ -184,20 +200,30 @@ public final class UiExtension {
          * @return self, for chaining
          */
         public Builder topoOverlayFactory(UiTopoOverlayFactory toFactory) {
-            this.topoOverlayFactory = toFactory;
+            topoOverlayFactory = toFactory;
             return this;
         }
 
         /**
-         * Builds the UI extension.
+         * Sets the topology map factory for this extension.
+         *
+         * @param tmFactory topology map factory
+         * @return self, for chaining
+         */
+        public Builder topoMapFactory(UiTopoMapFactory tmFactory) {
+            topoMapFactory = tmFactory;
+            return this;
+        }
+
+        /**
+         * Builds the user interface extension.
          *
          * @return UI extension instance
          */
         public UiExtension build() {
-            return new UiExtension(classLoader, resourcePath, views,
-                                   messageHandlerFactory, topoOverlayFactory);
+            return new UiExtension(classLoader, resourcePath, viewList,
+                                    messageHandlerFactory, topoOverlayFactory,
+                                    topoMapFactory);
         }
-
     }
-
 }

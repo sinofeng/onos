@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 package org.onosproject.store.trivial;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThat;
+import static org.hamcrest.Matchers.is;
 import static org.onosproject.net.DeviceId.deviceId;
 
 import java.util.ArrayList;
@@ -128,6 +130,18 @@ public class SimpleGroupStoreTest {
             } else if (expectedEvent == GroupEvent.Type.GROUP_UPDATE_REQUESTED) {
                 assertEquals(Group.GroupState.PENDING_UPDATE,
                              event.subject().state());
+                for (GroupBucket bucket:event.subject().buckets().buckets()) {
+                    Optional<GroupBucket> matched = createdBuckets.buckets()
+                            .stream()
+                            .filter((expected) -> expected.equals(bucket))
+                            .findFirst();
+                    assertEquals(matched.get().weight(),
+                            bucket.weight());
+                    assertEquals(matched.get().watchGroup(),
+                            bucket.watchGroup());
+                    assertEquals(matched.get().watchPort(),
+                            bucket.watchPort());
+                }
             } else if (expectedEvent == GroupEvent.Type.GROUP_REMOVE_REQUESTED) {
                 assertEquals(Group.GroupState.PENDING_DELETE,
                              event.subject().state());
@@ -190,6 +204,11 @@ public class SimpleGroupStoreTest {
         newKey = new DefaultGroupKey("group1RemoveBuckets".getBytes());
         testRemoveBuckets(currKey, newKey);
 
+        // Testing updateGroupDescription for SET operation from northbound
+        currKey = newKey;
+        newKey = new DefaultGroupKey("group1SetBuckets".getBytes());
+        testSetBuckets(currKey, newKey);
+
         // Testing addOrUpdateGroupEntry operation from southbound
         currKey = newKey;
         testUpdateGroupEntryFromSB(currKey);
@@ -199,6 +218,16 @@ public class SimpleGroupStoreTest {
 
         // Testing removeGroupEntry operation from southbound
         testRemoveGroupFromSB(currKey);
+
+        // Testing removing all groups on the given device by deviceid
+        newKey = new DefaultGroupKey("group1".getBytes());
+        testStoreAndGetGroup(newKey);
+        testDeleteGroupOnDevice(newKey);
+
+        // Testing removing all groups on the given device
+        newKey = new DefaultGroupKey("group1".getBytes());
+        testStoreAndGetGroup(newKey);
+        testPurgeGroupEntries();
     }
 
     // Testing storeGroup operation
@@ -335,6 +364,36 @@ public class SimpleGroupStoreTest {
                                                 toAddGroupBuckets,
                                                 addKey);
         simpleGroupStore.unsetDelegate(updateGroupDescDelegate);
+
+        short weight = 5;
+        toAddBuckets = new ArrayList<>();
+        for (PortNumber portNumber: newOutPorts) {
+            TrafficTreatment.Builder tBuilder = DefaultTrafficTreatment.builder();
+            tBuilder.setOutput(portNumber)
+                    .setEthDst(MacAddress.valueOf("00:00:00:00:00:03"))
+                    .setEthSrc(MacAddress.valueOf("00:00:00:00:00:01"))
+                    .pushMpls()
+                    .setMpls(MplsLabel.mplsLabel(106));
+            toAddBuckets.add(DefaultGroupBucket.createSelectGroupBucket(
+                    tBuilder.build(), weight));
+        }
+
+        toAddGroupBuckets = new GroupBuckets(toAddBuckets);
+        buckets = new ArrayList<>();
+        buckets.addAll(existingGroup.buckets().buckets());
+        buckets.addAll(toAddBuckets);
+        updatedGroupBuckets = new GroupBuckets(buckets);
+        updateGroupDescDelegate =
+                new InternalGroupStoreDelegate(addKey,
+                                               updatedGroupBuckets,
+                                               GroupEvent.Type.GROUP_UPDATE_REQUESTED);
+        simpleGroupStore.setDelegate(updateGroupDescDelegate);
+        simpleGroupStore.updateGroupDescription(D1,
+                                                addKey,
+                                                UpdateType.ADD,
+                                                toAddGroupBuckets,
+                                                addKey);
+        simpleGroupStore.unsetDelegate(updateGroupDescDelegate);
     }
 
     // Testing updateGroupDescription for REMOVE operation from northbound
@@ -364,6 +423,35 @@ public class SimpleGroupStoreTest {
         simpleGroupStore.unsetDelegate(removeGroupDescDelegate);
     }
 
+    // Testing updateGroupDescription for SET operation from northbound
+    private void testSetBuckets(GroupKey currKey, GroupKey setKey) {
+        List<GroupBucket> toSetBuckets = new ArrayList<>();
+
+        short weight = 5;
+        PortNumber portNumber = PortNumber.portNumber(42);
+        TrafficTreatment.Builder tBuilder = DefaultTrafficTreatment.builder();
+        tBuilder.setOutput(portNumber)
+                .setEthDst(MacAddress.valueOf("00:00:00:00:00:03"))
+                .setEthSrc(MacAddress.valueOf("00:00:00:00:00:01"))
+                .pushMpls()
+                .setMpls(MplsLabel.mplsLabel(106));
+        toSetBuckets.add(DefaultGroupBucket.createSelectGroupBucket(
+                tBuilder.build(), weight));
+
+        GroupBuckets toSetGroupBuckets = new GroupBuckets(toSetBuckets);
+        InternalGroupStoreDelegate updateGroupDescDelegate =
+                new InternalGroupStoreDelegate(setKey,
+                        toSetGroupBuckets,
+                        GroupEvent.Type.GROUP_UPDATE_REQUESTED);
+        simpleGroupStore.setDelegate(updateGroupDescDelegate);
+        simpleGroupStore.updateGroupDescription(D1,
+                currKey,
+                UpdateType.SET,
+                toSetGroupBuckets,
+                setKey);
+        simpleGroupStore.unsetDelegate(updateGroupDescDelegate);
+    }
+
     // Testing deleteGroupDescription operation from northbound
     private void testDeleteGroup(GroupKey currKey) {
         Group existingGroup = simpleGroupStore.getGroup(D1, currKey);
@@ -374,6 +462,20 @@ public class SimpleGroupStoreTest {
         simpleGroupStore.setDelegate(deleteGroupDescDelegate);
         simpleGroupStore.deleteGroupDescription(D1, currKey);
         simpleGroupStore.unsetDelegate(deleteGroupDescDelegate);
+    }
+
+    // Testing deleteGroupDescription operation from northbound
+    private void testDeleteGroupOnDevice(GroupKey currKey) {
+        assertThat(simpleGroupStore.getGroupCount(D1), is(1));
+        simpleGroupStore.purgeGroupEntry(D1);
+        assertThat(simpleGroupStore.getGroupCount(D1), is(0));
+    }
+
+    // Testing purgeGroupEntries
+    private void testPurgeGroupEntries() {
+        assertThat(simpleGroupStore.getGroupCount(D1), is(1));
+        simpleGroupStore.purgeGroupEntries();
+        assertThat(simpleGroupStore.getGroupCount(D1), is(0));
     }
 
     // Testing removeGroupEntry operation from southbound

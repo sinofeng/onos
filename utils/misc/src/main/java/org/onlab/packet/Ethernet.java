@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2014-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,6 +38,7 @@ import static org.onlab.packet.PacketUtils.checkInput;
  */
 public class Ethernet extends BasePacket {
     private static final String HEXES = "0123456789ABCDEF";
+    private static final String HEX_PROTO = "0x%s";
 
     public static final short TYPE_ARP = EthType.EtherType.ARP.ethType().toShort();
     public static final short TYPE_RARP = EthType.EtherType.RARP.ethType().toShort();
@@ -47,7 +48,7 @@ public class Ethernet extends BasePacket {
     public static final short TYPE_VLAN = EthType.EtherType.VLAN.ethType().toShort();
     public static final short TYPE_BSN = EthType.EtherType.BDDP.ethType().toShort();
 
-    public static final short MPLS_UNICAST = EthType.EtherType.MPLS_UNICAST.ethType().toShort();;
+    public static final short MPLS_UNICAST = EthType.EtherType.MPLS_UNICAST.ethType().toShort();
     public static final short MPLS_MULTICAST = EthType.EtherType.MPLS_MULTICAST.ethType().toShort();
 
 
@@ -494,7 +495,13 @@ public class Ethernet extends BasePacket {
         } else if (pkt instanceof DHCP) {
             sb.append("dhcp");
         } else {
-            sb.append(this.getEtherType());
+            /*
+             * When we don't know the protocol, we print using
+             * the well known hex format instead of a decimal
+             * value.
+             */
+            sb.append(String.format(HEX_PROTO,
+                                    Integer.toHexString(this.getEtherType() & 0xffff)));
         }
 
         sb.append("\ndl_vlan: ");

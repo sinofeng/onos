@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.onosproject.maven;
 import com.google.common.collect.ImmutableList;
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.commons.configuration.XMLConfiguration;
+import org.apache.commons.io.FileUtils;
 import org.apache.maven.artifact.repository.ArtifactRepository;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -34,13 +35,19 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.io.ByteStreams.toByteArray;
-import static org.codehaus.plexus.util.FileUtils.*;
+import static org.codehaus.plexus.util.FileUtils.copyFile;
+import static org.codehaus.plexus.util.FileUtils.fileRead;
+import static org.codehaus.plexus.util.FileUtils.fileWrite;
+import static org.codehaus.plexus.util.FileUtils.forceMkdir;
 
 /**
  * Produces ONOS application archive using the app.xml file information.
@@ -55,6 +62,7 @@ public class OnosAppMojo extends AbstractMojo {
     private static final String ARTIFACT = "artifact";
 
     private static final String APP_XML = "app.xml";
+    private static final String APP_PNG = "app.png";
     private static final String FEATURES_XML = "features.xml";
 
     private static final String MVN_URL = "mvn:";
@@ -64,6 +72,16 @@ public class OnosAppMojo extends AbstractMojo {
     private static final String ONOS_APP_ORIGIN = "onos.app.origin";
     private static final String ONOS_APP_REQUIRES = "onos.app.requires";
 
+    private static final String ONOS_APP_CATEGORY = "onos.app.category";
+    private static final String ONOS_APP_URL = "onos.app.url";
+    private static final String ONOS_APP_TITLE = "onos.app.title";
+    private static final String ONOS_APP_README = "onos.app.readme";
+
+    private static final String PROJECT_GROUP_ID = "project.groupId";
+    private static final String PROJECT_ARTIFACT_ID = "project.artifactId";
+    private static final String PROJECT_VERSION = "project.version";
+    private static final String PROJECT_DESCRIPTION = "project.description";
+
     private static final String JAR = "jar";
     private static final String XML = "xml";
     private static final String APP_ZIP = "oar";
@@ -72,16 +90,26 @@ public class OnosAppMojo extends AbstractMojo {
     private static final String DEFAULT_ORIGIN = "ON.Lab";
     private static final String DEFAULT_VERSION = "${project.version}";
 
+    private static final String DEFAULT_CATEGORY = "default";
+    private static final String DEFAULT_URL = "http://onosproject.org";
+
     private static final String DEFAULT_FEATURES_REPO =
             "mvn:${project.groupId}/${project.artifactId}/${project.version}/xml/features";
     private static final String DEFAULT_ARTIFACT =
             "mvn:${project.groupId}/${project.artifactId}/${project.version}";
+
+    private static final String PROP_START = "${";
+    private static final String PROP_END = "}";
 
     private static final int BUFFER_SIZE = 8192;
 
     private String name;
     private String origin;
     private String requiredApps;
+    private String category;
+    private String url;
+    private String title;
+    private String readme;
     private String version = DEFAULT_VERSION;
     private String featuresRepo = DEFAULT_FEATURES_REPO;
     private List<String> artifacts;
@@ -137,14 +165,15 @@ public class OnosAppMojo extends AbstractMojo {
     @Component
     protected MavenProjectHelper projectHelper;
 
-
     private File m2Directory;
     protected File stageDirectory;
     protected String projectPath;
+    private Map<String, String> properties;
 
     @Override
     public void execute() throws MojoExecutionException {
         File appFile = new File(baseDir, APP_XML);
+        File iconFile = new File(baseDir, APP_PNG);
         File featuresFile = new File(baseDir, FEATURES_XML);
 
         name = (String) project.getProperties().get(ONOS_APP_NAME);
@@ -165,19 +194,36 @@ public class OnosAppMojo extends AbstractMojo {
         requiredApps = (String) project.getProperties().get(ONOS_APP_REQUIRES);
         requiredApps = requiredApps == null ? "" : requiredApps.replaceAll("[\\s]", "");
 
+        category = (String) project.getProperties().get(ONOS_APP_CATEGORY);
+        category = category != null ? category : DEFAULT_CATEGORY;
+
+        url = (String) project.getProperties().get(ONOS_APP_URL);
+        url = url != null ? url : DEFAULT_URL;
+
+        // if title does not exist, fall back to the name
+        title = (String) project.getProperties().get(ONOS_APP_TITLE);
+        title = title != null ? title : name;
+
+        // if readme does not exist, we simply fallback to use description
+        readme = (String) project.getProperties().get(ONOS_APP_README);
+        readme = readme != null ? readme : projectDescription;
+
+        properties = buildProperties();
+
         if (appFile.exists()) {
             loadAppFile(appFile);
         } else {
-            artifacts = ImmutableList.of(eval(DEFAULT_ARTIFACT));
+            artifacts = ImmutableList.of(expand(DEFAULT_ARTIFACT));
         }
 
         // If there are any artifacts, stage the
         if (!artifacts.isEmpty()) {
-            getLog().info("Building ONOS application package for " + name + " (v" + eval(version) + ")");
+            getLog().info("Building ONOS application package for " + name + " (v" + expand(version) + ")");
             artifacts.forEach(a -> getLog().debug("Including artifact: " + a));
 
             if (stageDirectory.exists() || stageDirectory.mkdirs()) {
                 processAppXml(appFile);
+                processAppPng(iconFile);
                 processFeaturesXml(featuresFile);
                 processArtifacts();
                 generateAppPackage();
@@ -185,6 +231,24 @@ public class OnosAppMojo extends AbstractMojo {
                 throw new MojoExecutionException("Unable to create directory: " + stageDirectory);
             }
         }
+    }
+
+    // Sets up a properties dictionary with the properties from the POM file,
+    // some of which have been sanitized with nice defaults
+    private Map<String, String> buildProperties() {
+        Map<String, String> properties = new HashMap();
+        project.getProperties().forEach((k, v) -> properties.put((String) k, (String) v));
+        properties.put(PROJECT_GROUP_ID, projectGroupId);
+        properties.put(PROJECT_ARTIFACT_ID, projectArtifactId);
+        properties.put(PROJECT_VERSION, projectVersion);
+        properties.put(PROJECT_DESCRIPTION, readme);
+        properties.put(ONOS_APP_ORIGIN, origin);
+        properties.put(ONOS_APP_REQUIRES, requiredApps);
+        properties.put(ONOS_APP_CATEGORY, category);
+        properties.put(ONOS_APP_URL, url);
+        properties.put(ONOS_APP_TITLE, title);
+        properties.put(ONOS_APP_README, readme);
+        return properties;
     }
 
     // Loads the app.xml file.
@@ -198,11 +262,11 @@ public class OnosAppMojo extends AbstractMojo {
             xml.setDelimiterParsingDisabled(true);
 
             name = xml.getString(NAME);
-            version = eval(xml.getString(VERSION));
-            featuresRepo = eval(xml.getString(FEATURES_REPO));
+            version = expand(xml.getString(VERSION));
+            featuresRepo = expand(xml.getString(FEATURES_REPO));
 
             artifacts = xml.configurationsAt(ARTIFACT).stream()
-                    .map(cfg -> eval(cfg.getRootNode().getValue().toString()))
+                    .map(cfg -> expand(cfg.getRootNode().getValue().toString()))
                     .collect(Collectors.toList());
 
         } catch (ConfigurationException e) {
@@ -227,9 +291,22 @@ public class OnosAppMojo extends AbstractMojo {
                 byte[] bytes = toByteArray(getClass().getResourceAsStream(APP_XML));
                 contents = new String(bytes);
             }
-            fileWrite(file.getAbsolutePath(), eval(contents));
+            fileWrite(file.getAbsolutePath(), expand(contents));
         } catch (IOException e) {
             throw new MojoExecutionException("Unable to process app.xml", e);
+        }
+    }
+
+    // Stages the app.png file of a specific application.
+    private void processAppPng(File iconFile) throws MojoExecutionException {
+        try {
+            File stagedIconFile = new File(stageDirectory, APP_PNG);
+
+            if (iconFile.exists()) {
+                FileUtils.copyFile(iconFile, stagedIconFile);
+            }
+        } catch (IOException e) {
+            throw new MojoExecutionException("Unable to copy app.png", e);
         }
     }
 
@@ -257,7 +334,7 @@ public class OnosAppMojo extends AbstractMojo {
                 artifactFile(projectArtifactId, projectVersion, XML, "features");
         File dstDir = new File(stageDirectory, projectPath);
         forceMkdir(dstDir);
-        String s = eval(new String(toByteArray(stream)));
+        String s = expand(new String(toByteArray(stream)));
         fileWrite(new File(dstDir, featuresArtifact).getAbsolutePath(), s);
     }
 
@@ -303,7 +380,7 @@ public class OnosAppMojo extends AbstractMojo {
     // Generates the ONOS package ZIP file.
     private void generateAppPackage() throws MojoExecutionException {
         File appZip = new File(dstDirectory, artifactFile(projectArtifactId, projectVersion,
-                                                          APP_ZIP, null));
+                APP_ZIP, null));
         try (FileOutputStream fos = new FileOutputStream(appZip);
              ZipOutputStream zos = new ZipOutputStream(fos)) {
             zipDirectory("", stageDirectory, zos);
@@ -320,14 +397,14 @@ public class OnosAppMojo extends AbstractMojo {
 
     // Generates artifact directory name from the specified elements.
     private String artifactDir(String gid, String aid, String version) {
-        return gid.replace('.', '/') + "/" + aid.replace('.', '/') + "/" + version;
+        return gid.replace('.', '/') + "/" + aid + "/" + version;
     }
 
     // Generates artifact file name from the specified fields.
     private String artifactFile(String[] fields) {
         return fields.length < 5 ?
                 artifactFile(fields[1], fields[2],
-                             (fields.length < 4 ? JAR : fields[3]), null) :
+                        (fields.length < 4 ? JAR : fields[3]), null) :
                 artifactFile(fields[1], fields[2], fields[3], fields[4]);
     }
 
@@ -338,16 +415,51 @@ public class OnosAppMojo extends AbstractMojo {
                 aid + "-" + version + "-" + classifier + "." + type;
     }
 
-    // Returns the given string with project variable substitutions.
-    private String eval(String string) {
-        return string == null ? null :
-                string.replaceAll("\\$\\{onos.app.name\\}", name)
-                        .replaceAll("\\$\\{onos.app.origin\\}", origin)
-                        .replaceAll("\\$\\{onos.app.requires\\}", requiredApps)
-                        .replaceAll("\\$\\{project.groupId\\}", projectGroupId)
-                        .replaceAll("\\$\\{project.artifactId\\}", projectArtifactId)
-                        .replaceAll("\\$\\{project.version\\}", projectVersion)
-                        .replaceAll("\\$\\{project.description\\}", projectDescription);
+    /**
+     * Expands any environment variables in the specified string. These are
+     * specified as ${property} tokens.
+     *
+     * @param string     string to be processed
+     * @return original string with expanded substitutions
+     */
+    private String expand(String string) {
+        return expand(string, properties);
+    }
+
+    /**
+     * Expands any environment variables in the specified string. These are
+     * specified as ${property} tokens.
+     *
+     * @param string     string to be processed
+     * @param properties dictionary of property values to substitute
+     * @return original string with expanded substitutions
+     */
+    private String expand(String string, Map<String, String> properties) {
+        if (string == null) {
+            return null;
+        }
+
+        String pString = string;
+        StringBuilder sb = new StringBuilder();
+        int start, end, last = 0;
+        while ((start = pString.indexOf(PROP_START, last)) >= 0) {
+            end = pString.indexOf(PROP_END, start + PROP_START.length());
+            checkArgument(end > start, "Malformed property in %s", pString);
+            sb.append(pString.substring(last, start));
+            String prop = pString.substring(start + PROP_START.length(), end);
+            String value;
+
+            value = properties.get(prop);
+
+            if (value == null) {
+                sb.append(PROP_START).append(prop).append(PROP_END);
+            } else {
+                sb.append(value != null ? value : "");
+            }
+            last = end + 1;
+        }
+        sb.append(pString.substring(last));
+        return sb.toString();
     }
 
     // Recursively archives the specified directory into a given ZIP stream.

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,8 @@ import java.util.Iterator;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.List;
+import java.util.ArrayList;
 
 import org.onlab.packet.Ip4Address;
 import org.onlab.packet.IpAddress;
@@ -42,7 +44,7 @@ public class BgpConfig implements BgpCfg {
     private static final short DEFAULT_HOLD_TIMER = 120;
     private static final short DEFAULT_CONN_RETRY_TIME = 120;
     private static final short DEFAULT_CONN_RETRY_COUNT = 5;
-
+    private List<BgpConnectPeerImpl> peerList = new ArrayList();
     private State state = State.INIT;
     private int localAs;
     private int maxSession;
@@ -51,12 +53,13 @@ public class BgpConfig implements BgpCfg {
     private boolean largeAs = false;
     private int maxConnRetryTime;
     private int maxConnRetryCount;
-
+    private FlowSpec flowSpec = FlowSpec.NONE;
     private Ip4Address routerId = null;
     private TreeMap<String, BgpPeerCfg> bgpPeerTree = new TreeMap<>();
     private BgpConnectPeer connectPeer;
     private BgpPeerManagerImpl peerManager;
     private BgpController bgpController;
+    private boolean rpdCapability;
 
     /*
      * Constructor to initialize the values.
@@ -67,7 +70,6 @@ public class BgpConfig implements BgpCfg {
         this.holdTime = DEFAULT_HOLD_TIMER;
         this.maxConnRetryTime = DEFAULT_CONN_RETRY_TIME;
         this.maxConnRetryCount = DEFAULT_CONN_RETRY_COUNT;
-        this.lsCapability = true;
     }
 
     @Override
@@ -120,6 +122,26 @@ public class BgpConfig implements BgpCfg {
     }
 
     @Override
+    public FlowSpec flowSpecCapability() {
+        return this.flowSpec;
+    }
+
+    @Override
+    public void setFlowSpecCapability(FlowSpec flowSpec) {
+        this.flowSpec = flowSpec;
+    }
+
+    @Override
+    public boolean flowSpecRpdCapability() {
+        return this.rpdCapability;
+    }
+
+    @Override
+    public void setFlowSpecRpdCapability(boolean rpdCapability) {
+        this.rpdCapability = rpdCapability;
+    }
+
+    @Override
     public String getRouterId() {
         if (this.routerId != null) {
             return this.routerId.toString();
@@ -169,10 +191,10 @@ public class BgpConfig implements BgpCfg {
             }
 
             this.bgpPeerTree.put(routerid, lspeer);
-            log.debug("added successfully");
+            log.debug("Added successfully");
             return true;
         } else {
-            log.debug("already exists");
+            log.debug("Already exists");
             return false;
         }
     }
@@ -185,9 +207,11 @@ public class BgpConfig implements BgpCfg {
             lspeer.setSelfInnitConnection(true);
 
             if (lspeer.connectPeer() == null) {
-                connectPeer = new BgpConnectPeerImpl(bgpController, routerid, Controller.getBgpPortNum());
+                connectPeer = new BgpConnectPeerImpl(bgpController, routerid, Controller.BGP_PORT_NUM);
                 lspeer.setConnectPeer(connectPeer);
                 connectPeer.connectPeer();
+                peerList.add((BgpConnectPeerImpl) connectPeer);
+
             }
             return true;
         }
@@ -223,8 +247,9 @@ public class BgpConfig implements BgpCfg {
             if (disconnPeer != null) {
                 // TODO: send notification peer deconfigured
                 disconnPeer.disconnectPeer();
+            } else if (lspeer.connectPeer() != null) {
+                lspeer.connectPeer().disconnectPeer();
             }
-            lspeer.connectPeer().disconnectPeer();
             lspeer.setState(BgpPeerCfg.State.IDLE);
             lspeer.setSelfInnitConnection(false);
             log.debug("Disconnected : " + routerid + " successfully");

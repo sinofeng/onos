@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2014-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -97,12 +97,30 @@ public interface TrafficSelector {
         Builder matchEthDst(MacAddress addr);
 
         /**
+         * Matches a l2 dst address with mask.
+         *
+         * @param addr a l2 address
+         * @param mask a mask for an l2 address
+         * @return a selection builder
+         */
+        Builder matchEthDstMasked(MacAddress addr, MacAddress mask);
+
+        /**
          * Matches a l2 src address.
          *
          * @param addr a l2 address
          * @return a selection builder
          */
         Builder matchEthSrc(MacAddress addr);
+
+        /**
+         * Matches a l2 src address with mask.
+         *
+         * @param addr a l2 address
+         * @param mask a mask for an l2 address
+         * @return a selection builder
+         */
+        Builder matchEthSrcMasked(MacAddress addr, MacAddress mask);
 
         /**
          * Matches the ethernet type.
@@ -127,6 +145,22 @@ public interface TrafficSelector {
          * @return a selection builder
          */
         Builder matchVlanPcp(byte vlanPcp);
+
+        /**
+         * Matches the inner vlan id.
+         *
+         * @param vlanId a vlan id
+         * @return a selection builder
+         */
+        Builder matchInnerVlanId(VlanId vlanId);
+
+        /**
+         * Matches a vlan priority.
+         *
+         * @param vlanPcp a vlan priority
+         * @return a selection builder
+         */
+        Builder matchInnerVlanPcp(byte vlanPcp);
 
         /**
          * Matches an IP DSCP (6 bits in ToS field).
@@ -173,28 +207,17 @@ public interface TrafficSelector {
          *
          * @param tcpPort a TCP source port number
          * @return a selection builder
-         * @deprecated in Drake release
-         */
-        @Deprecated
-        Builder matchTcpSrc(short tcpPort);
-
-        /**
-         * Matches a TCP source port number.
-         *
-         * @param tcpPort a TCP source port number
-         * @return a selection builder
          */
         Builder matchTcpSrc(TpPort tcpPort);
 
         /**
-         * Matches a TCP destination port number.
+         * Matches a TCP source port number with mask.
          *
-         * @param tcpPort a TCP destination port number
+         * @param tcpPort a TCP source port number
+         * @param mask a mask for a TCP source port number
          * @return a selection builder
-         * @deprecated in Drake release
          */
-        @Deprecated
-        Builder matchTcpDst(short tcpPort);
+        Builder matchTcpSrcMasked(TpPort tcpPort, TpPort mask);
 
         /**
          * Matches a TCP destination port number.
@@ -205,14 +228,13 @@ public interface TrafficSelector {
         Builder matchTcpDst(TpPort tcpPort);
 
         /**
-         * Matches an UDP source port number.
+         * Matches a TCP destination port number with mask.
          *
-         * @param udpPort an UDP source port number
+         * @param tcpPort a TCP destination port number
+         * @param mask a mask for a TCP destination port number
          * @return a selection builder
-         * @deprecated in Drake release
          */
-        @Deprecated
-        Builder matchUdpSrc(short udpPort);
+        Builder matchTcpDstMasked(TpPort tcpPort, TpPort mask);
 
         /**
          * Matches an UDP source port number.
@@ -223,14 +245,13 @@ public interface TrafficSelector {
         Builder matchUdpSrc(TpPort udpPort);
 
         /**
-         * Matches an UDP destination port number.
+         * Matches a UDP source port number with mask.
          *
-         * @param udpPort an UDP destination port number
+         * @param udpPort a UDP source port number
+         * @param mask a mask for a UDP source port number
          * @return a selection builder
-         * @deprecated in Drake release
          */
-        @Deprecated
-        Builder matchUdpDst(short udpPort);
+        Builder matchUdpSrcMasked(TpPort udpPort, TpPort mask);
 
         /**
          * Matches an UDP destination port number.
@@ -241,14 +262,13 @@ public interface TrafficSelector {
         Builder matchUdpDst(TpPort udpPort);
 
         /**
-         * Matches a SCTP source port number.
+         * Matches a UDP destination port number with mask.
          *
-         * @param sctpPort a SCTP source port number
+         * @param udpPort a UDP destination port number
+         * @param mask a mask for a UDP destination port number
          * @return a selection builder
-         * @deprecated in Drake release
          */
-        @Deprecated
-        Builder matchSctpSrc(short sctpPort);
+        Builder matchUdpDstMasked(TpPort udpPort, TpPort mask);
 
         /**
          * Matches a SCTP source port number.
@@ -259,14 +279,13 @@ public interface TrafficSelector {
         Builder matchSctpSrc(TpPort sctpPort);
 
         /**
-         * Matches a SCTP destination port number.
+         * Matches a SCTP source port number with mask.
          *
-         * @param sctpPort a SCTP destination port number
+         * @param sctpPort a SCTP source port number
+         * @param mask a mask for a SCTP source port number
          * @return a selection builder
-         * @deprecated in Drake release
          */
-        @Deprecated
-        Builder matchSctpDst(short sctpPort);
+        Builder matchSctpSrcMasked(TpPort sctpPort, TpPort mask);
 
         /**
          * Matches a SCTP destination port number.
@@ -275,6 +294,15 @@ public interface TrafficSelector {
          * @return a selection builder
          */
         Builder matchSctpDst(TpPort sctpPort);
+
+        /**
+         * Matches a SCTP destination port number with mask.
+         *
+         * @param sctpPort a SCTP destination port number
+         * @param mask a mask for a SCTP destination port number
+         * @return a selection builder
+         */
+        Builder matchSctpDstMasked(TpPort sctpPort, TpPort mask);
 
         /**
          * Matches an ICMP type.

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -83,15 +83,15 @@ public class BgpLinkLSIdentifier implements Comparable<Object> {
      * @throws BgpParseException while parsing link identifier
      */
     public static BgpLinkLSIdentifier parseLinkIdendifier(ChannelBuffer cb, byte protocolId) throws BgpParseException {
-        //Parse local node descriptor
+        log.debug("Parse local node descriptor");
         NodeDescriptors localNodeDescriptors = new NodeDescriptors();
         localNodeDescriptors = parseNodeDescriptors(cb, NodeDescriptors.LOCAL_NODE_DES_TYPE, protocolId);
 
-        //Parse remote node descriptor
+        log.debug("Parse remote node descriptor");
         NodeDescriptors remoteNodeDescriptors = new NodeDescriptors();
         remoteNodeDescriptors = parseNodeDescriptors(cb, NodeDescriptors.REMOTE_NODE_DES_TYPE, protocolId);
 
-        //Parse link descriptor
+        log.debug("Parse link descriptor");
         LinkedList<BgpValueType> linkDescriptor = new LinkedList<>();
         linkDescriptor = parseLinkDescriptors(cb);
         return new BgpLinkLSIdentifier(localNodeDescriptors, remoteNodeDescriptors, linkDescriptor);
@@ -108,7 +108,7 @@ public class BgpLinkLSIdentifier implements Comparable<Object> {
      */
     public static NodeDescriptors parseNodeDescriptors(ChannelBuffer cb, short desType, byte protocolId)
             throws BgpParseException {
-        log.debug("parse Node descriptors");
+        log.debug("Parse node descriptors");
         ChannelBuffer tempBuf = cb.copy();
         short type = cb.readShort();
         short length = cb.readShort();
@@ -166,8 +166,8 @@ public class BgpLinkLSIdentifier implements Comparable<Object> {
                 break;
             case BgpAttrNodeMultiTopologyId.ATTRNODE_MULTITOPOLOGY:
                 tlv = BgpAttrNodeMultiTopologyId.read(tempCb);
-                count = count++;
-                //MultiTopologyId TLV cannot repeat more than once
+                count++;
+                log.debug("MultiTopologyId TLV cannot repeat more than once");
                 if (count > 1) {
                     //length + 4 implies data contains type, length and value
                     throw new BgpParseException(BgpErrorType.UPDATE_MESSAGE_ERROR,
@@ -261,6 +261,7 @@ public class BgpLinkLSIdentifier implements Comparable<Object> {
         if (this.equals(o)) {
             return 0;
         }
+        boolean tlvFound = false;
         int result = this.localNodeDescriptors.compareTo(((BgpLinkLSIdentifier) o).localNodeDescriptors);
         if (result != 0) {
             return result;
@@ -275,19 +276,23 @@ public class BgpLinkLSIdentifier implements Comparable<Object> {
                 } else {
                     return -1;
                 }
-           }
+            }
             ListIterator<BgpValueType> listIterator = linkDescriptor.listIterator();
-            ListIterator<BgpValueType> listIteratorOther = ((BgpLinkLSIdentifier) o).linkDescriptor.listIterator();
             while (listIterator.hasNext()) {
-                BgpValueType tlv = listIterator.next();
-                if (linkDescriptor.contains(tlv) && ((BgpLinkLSIdentifier) o).linkDescriptor.contains(tlv)) {
-                    int res = linkDescriptor.get(linkDescriptor.indexOf(tlv)).compareTo(
-                            ((BgpLinkLSIdentifier) o).linkDescriptor.get(((BgpLinkLSIdentifier) o).linkDescriptor
-                                    .indexOf(tlv)));
-                    if (res != 0) {
-                        return res;
+                BgpValueType tlv1 = listIterator.next();
+                for (BgpValueType tlv : ((BgpLinkLSIdentifier) o).linkDescriptor) {
+                    if (tlv.getType() == tlv1.getType()) {
+                        result = linkDescriptor.get(linkDescriptor.indexOf(tlv1)).compareTo(
+                                ((BgpLinkLSIdentifier) o).linkDescriptor.get(((BgpLinkLSIdentifier) o).linkDescriptor
+                                        .indexOf(tlv)));
+                        if (result != 0) {
+                            return result;
+                        }
+                        tlvFound = true;
+                        break;
                     }
-                } else {
+                }
+                if (!tlvFound) {
                     return 1;
                 }
             }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2014-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,16 +34,19 @@ import org.onosproject.net.device.DeviceProviderRegistry;
 import org.onosproject.net.device.DeviceProviderService;
 import org.onosproject.net.device.PortDescription;
 import org.onosproject.net.device.PortStatistics;
+import org.onosproject.net.driver.DriverServiceAdapter;
 import org.onosproject.net.provider.ProviderId;
 import org.onosproject.openflow.controller.Dpid;
 import org.onosproject.openflow.controller.OpenFlowController;
 import org.onosproject.openflow.controller.OpenFlowEventListener;
+import org.onosproject.openflow.controller.OpenFlowMessageListener;
 import org.onosproject.openflow.controller.OpenFlowSwitch;
 import org.onosproject.openflow.controller.OpenFlowSwitchListener;
 import org.onosproject.openflow.controller.PacketListener;
 import org.onosproject.openflow.controller.RoleState;
 import org.projectfloodlight.openflow.protocol.OFFactory;
 import org.projectfloodlight.openflow.protocol.OFMessage;
+import org.projectfloodlight.openflow.protocol.OFMeterFeatures;
 import org.projectfloodlight.openflow.protocol.OFPortDesc;
 import org.projectfloodlight.openflow.protocol.OFPortReason;
 import org.projectfloodlight.openflow.protocol.OFPortStatus;
@@ -88,6 +91,7 @@ public class OpenFlowDeviceProviderTest {
         provider.providerRegistry = registry;
         provider.controller = controller;
         provider.cfgService = new ComponentConfigAdapter();
+        provider.driverService = new DriverServiceAdapter();
         controller.switchMap.put(DPID1, SW1);
         provider.activate(null);
         assertNotNull("provider should be registered", registry.provider);
@@ -114,9 +118,22 @@ public class OpenFlowDeviceProviderTest {
         assertEquals("Should be SLAVE", RoleState.SLAVE, controller.roleMap.get(DPID1));
     }
 
+    //sending a features req, msg will be added to sent
     @Test
     public void triggerProbe() {
+        int cur = SW1.sent.size();
+        provider.triggerProbe(DID1);
+        assertEquals("OF message not sent", cur + 1, SW1.sent.size());
+    }
 
+    //test receiving features reply
+    @Test
+    public void switchChanged() {
+        controller.listener.switchChanged(DPID1);
+        Collection<PortDescription> updatedDescr = registry.ports.values();
+        for (PortDescription pd : updatedDescr) {
+            assertNotNull("Switch change not handled by the provider service", pd);
+        }
     }
 
     @Test
@@ -221,7 +238,6 @@ public class OpenFlowDeviceProviderTest {
             public void updatePortStatistics(DeviceId deviceId, Collection<PortStatistics> portStatistics) {
 
             }
-
         }
     }
 
@@ -272,6 +288,16 @@ public class OpenFlowDeviceProviderTest {
         }
 
         @Override
+        public void addMessageListener(OpenFlowMessageListener listener) {
+
+        }
+
+        @Override
+        public void removeMessageListener(OpenFlowMessageListener listener) {
+
+        }
+
+        @Override
         public void addPacketListener(int priority, PacketListener listener) {
         }
 
@@ -318,6 +344,7 @@ public class OpenFlowDeviceProviderTest {
 
         @Override
         public void handleMessage(OFMessage fromSwitch) {
+
         }
 
         @Override
@@ -333,6 +360,11 @@ public class OpenFlowDeviceProviderTest {
         @Override
         public List<OFPortDesc> getPorts() {
             return PLIST;
+        }
+
+        @Override
+        public OFMeterFeatures getMeterFeatures() {
+            return null;
         }
 
         @Override

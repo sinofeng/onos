@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,8 @@ import org.projectfloodlight.openflow.protocol.OFFactories;
 import org.projectfloodlight.openflow.protocol.OFFactory;
 import org.projectfloodlight.openflow.protocol.OFFeaturesReply;
 import org.projectfloodlight.openflow.protocol.OFMessage;
+import org.projectfloodlight.openflow.protocol.OFMeterFeatures;
+import org.projectfloodlight.openflow.protocol.OFMeterFeaturesStatsReply;
 import org.projectfloodlight.openflow.protocol.OFNiciraControllerRoleRequest;
 import org.projectfloodlight.openflow.protocol.OFPortDesc;
 import org.projectfloodlight.openflow.protocol.OFPortDescStatsReply;
@@ -82,6 +84,11 @@ public abstract class AbstractOpenFlowSwitch extends AbstractHandlerBehaviour
     protected OFFeaturesReply features;
     protected OFDescStatsReply desc;
 
+    protected OFMeterFeaturesStatsReply meterfeatures;
+
+    // messagesPendingMastership is used as synchronization variable for
+    // all mastership related changes. In this block, mastership (including
+    // role update) will have either occurred or not.
     private final AtomicReference<List<OFMessage>> messagesPendingMastership
             = new AtomicReference<>();
 
@@ -117,9 +124,9 @@ public abstract class AbstractOpenFlowSwitch extends AbstractHandlerBehaviour
            a synchronization primitive, because the message would have just been
            dropped anyway.
         */
+
         if (role == RoleState.MASTER) {
             // fast path send when we are master
-
             sendMsgsOnChannel(msgs);
             return;
         }
@@ -153,6 +160,7 @@ public abstract class AbstractOpenFlowSwitch extends AbstractHandlerBehaviour
     private void sendMsgsOnChannel(List<OFMessage> msgs) {
         if (channel.isConnected()) {
             channel.write(msgs);
+            agent.processDownstreamMessage(dpid, msgs);
         } else {
             log.warn("Dropping messages for switch {} because channel is not connected: {}",
                      dpid, msgs);
@@ -171,7 +179,8 @@ public abstract class AbstractOpenFlowSwitch extends AbstractHandlerBehaviour
     }
 
     @Override
-    public final void sendHandshakeMessage(OFMessage message) {
+    public final void
+    sendHandshakeMessage(OFMessage message) {
         if (!this.isDriverHandshakeComplete()) {
             sendMsgsOnChannel(Collections.singletonList(message));
         }
@@ -237,6 +246,11 @@ public abstract class AbstractOpenFlowSwitch extends AbstractHandlerBehaviour
     }
 
     @Override
+    public void setMeterFeaturesReply(OFMeterFeaturesStatsReply meterFeaturesReply) {
+        meterfeatures = meterFeaturesReply;
+    }
+
+    @Override
     public abstract Boolean supportNxRole();
 
     //************************
@@ -251,6 +265,8 @@ public abstract class AbstractOpenFlowSwitch extends AbstractHandlerBehaviour
     public final void handleMessage(OFMessage m) {
         if (this.role == RoleState.MASTER || m instanceof OFPortStatus) {
             this.agent.processMessage(dpid, m);
+        } else {
+            log.trace("Dropping received message {}, was not MASTER", m);
         }
     }
 
@@ -285,7 +301,8 @@ public abstract class AbstractOpenFlowSwitch extends AbstractHandlerBehaviour
         synchronized (messagesPendingMastership) {
             List<OFMessage> messages = messagesPendingMastership.get();
             if (messages != null) {
-                this.sendMsg(messages);
+                // Cannot use sendMsg here. It will only append to pending list.
+                sendMsgsOnChannel(messages);
                 log.debug("Sending {} pending messages to switch {}",
                           messages.size(), dpid);
                 messagesPendingMastership.set(null);
@@ -453,6 +470,15 @@ public abstract class AbstractOpenFlowSwitch extends AbstractHandlerBehaviour
         return this.ports.stream()
                   .flatMap(portReply -> portReply.getEntries().stream())
                   .collect(Collectors.toList());
+    }
+
+    @Override
+    public OFMeterFeatures getMeterFeatures() {
+        if (this.meterfeatures != null) {
+            return this.meterfeatures.getFeatures();
+        } else {
+            return null;
+        }
     }
 
     @Override

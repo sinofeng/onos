@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,8 +55,6 @@ import org.onosproject.net.DeviceId;
 import org.onosproject.net.device.DeviceService;
 import org.onosproject.store.AbstractStore;
 import org.onosproject.store.cluster.messaging.ClusterCommunicationService;
-import org.onosproject.store.cluster.messaging.ClusterMessage;
-import org.onosproject.store.cluster.messaging.ClusterMessageHandler;
 import org.onosproject.store.serializers.KryoNamespaces;
 import org.onosproject.store.service.ConsistentMap;
 import org.onosproject.store.service.Serializer;
@@ -77,7 +75,7 @@ public class DistributedLabelResourceStore
         implements LabelResourceStore {
     private final Logger log = getLogger(getClass());
 
-    private static final String POOL_MAP_NAME = "labelresourcepool";
+    private static final String POOL_MAP_NAME = "onos-label-resource-pool";
 
     private static final String GLOBAL_RESOURCE_POOL_DEVICE_ID = "global_resource_pool_device_id";
 
@@ -105,7 +103,7 @@ public class DistributedLabelResourceStore
     private static final Serializer SERIALIZER = Serializer
             .using(new KryoNamespace.Builder().register(KryoNamespaces.API)
                     .register(LabelResourceEvent.class)
-                    .register(LabelResourcePool.class).register(DeviceId.class)
+                    .register(LabelResourcePool.class)
                     .register(LabelResourceRequest.class)
                     .register(LabelResourceRequest.Type.class)
                     .register(LabelResourceEvent.Type.class)
@@ -118,70 +116,50 @@ public class DistributedLabelResourceStore
 
         resourcePool = storageService
                 .<DeviceId, LabelResourcePool>consistentMapBuilder()
-                .withName(POOL_MAP_NAME).withSerializer(SERIALIZER)
-                .withPartitionsDisabled().build();
+                .withName(POOL_MAP_NAME).withSerializer(SERIALIZER).build();
         messageHandlingExecutor = Executors
                 .newFixedThreadPool(MESSAGE_HANDLER_THREAD_POOL_SIZE,
                                     groupedThreads("onos/store/flow",
-                                                   "message-handlers"));
+                                                   "message-handlers",
+                                                   log));
         clusterCommunicator
                 .addSubscriber(LabelResourceMessageSubjects.LABEL_POOL_CREATED,
-                               new ClusterMessageHandler() {
-
-                                   @Override
-                                   public void handle(ClusterMessage message) {
-                                       LabelResourcePool operation = SERIALIZER
-                                               .decode(message.payload());
-                                       log.trace("received get flow entry request for {}",
-                                                 operation);
-                                       boolean b = internalCreate(operation);
-                                       message.respond(SERIALIZER.encode(b));
-                                   }
-                               }, messageHandlingExecutor);
+                        SERIALIZER::<LabelResourcePool>decode,
+                        operation -> {
+                            log.trace("received get flow entry request for {}", operation);
+                            return internalCreate(operation);
+                        },
+                        SERIALIZER::<Boolean>encode,
+                        messageHandlingExecutor);
         clusterCommunicator
                 .addSubscriber(LabelResourceMessageSubjects.LABEL_POOL_DESTROYED,
-                               new ClusterMessageHandler() {
-
-                                   @Override
-                                   public void handle(ClusterMessage message) {
-                                       DeviceId deviceId = SERIALIZER
-                                               .decode(message.payload());
-                                       log.trace("received get flow entry request for {}",
-                                                 deviceId);
-                                       boolean b = internalDestroy(deviceId);
-                                       message.respond(SERIALIZER.encode(b));
-                                   }
-                               }, messageHandlingExecutor);
+                        SERIALIZER::<DeviceId>decode,
+                        deviceId -> {
+                            log.trace("received get flow entry request for {}", deviceId);
+                            return internalDestroy(deviceId);
+                        },
+                        SERIALIZER::<Boolean>encode,
+                        messageHandlingExecutor);
         clusterCommunicator
                 .addSubscriber(LabelResourceMessageSubjects.LABEL_POOL_APPLY,
-                               new ClusterMessageHandler() {
+                        SERIALIZER::<LabelResourceRequest>decode,
+                        request -> {
+                            log.trace("received get flow entry request for {}", request);
+                            return internalApply(request);
 
-                                   @Override
-                                   public void handle(ClusterMessage message) {
-                                       LabelResourceRequest request = SERIALIZER
-                                               .decode(message.payload());
-                                       log.trace("received get flow entry request for {}",
-                                                 request);
-                                       final Collection<LabelResource> resource = internalApply(request);
-                                       message.respond(SERIALIZER
-                                               .encode(resource));
-                                   }
-                               }, messageHandlingExecutor);
+                        },
+                        SERIALIZER::<Collection<LabelResource>>encode,
+                        messageHandlingExecutor);
         clusterCommunicator
                 .addSubscriber(LabelResourceMessageSubjects.LABEL_POOL_RELEASE,
-                               new ClusterMessageHandler() {
-
-                                   @Override
-                                   public void handle(ClusterMessage message) {
-                                       LabelResourceRequest request = SERIALIZER
-                                               .decode(message.payload());
-                                       log.trace("received get flow entry request for {}",
-                                                 request);
-                                       final boolean isSuccess = internalRelease(request);
-                                       message.respond(SERIALIZER
-                                               .encode(isSuccess));
-                                   }
-                               }, messageHandlingExecutor);
+                        SERIALIZER::<LabelResourceRequest>decode,
+                        request -> {
+                            log.trace("received get flow entry request for {}",
+                                    request);
+                            return internalRelease(request);
+                        },
+                        SERIALIZER::<Boolean>encode,
+                        messageHandlingExecutor);
         log.info("Started");
     }
 
@@ -219,7 +197,7 @@ public class DistributedLabelResourceStore
     }
 
     private boolean create(LabelResourcePool pool) {
-        Device device = (Device) deviceService.getDevice(pool.deviceId());
+        Device device = deviceService.getDevice(pool.deviceId());
         if (device == null) {
             return false;
         }
@@ -260,7 +238,7 @@ public class DistributedLabelResourceStore
 
     @Override
     public boolean destroyDevicePool(DeviceId deviceId) {
-        Device device = (Device) deviceService.getDevice(deviceId);
+        Device device = deviceService.getDevice(deviceId);
         if (device == null) {
             return false;
         }
@@ -302,7 +280,7 @@ public class DistributedLabelResourceStore
     @Override
     public Collection<LabelResource> applyFromDevicePool(DeviceId deviceId,
                                                          long applyNum) {
-        Device device = (Device) deviceService.getDevice(deviceId);
+        Device device = deviceService.getDevice(deviceId);
         if (device == null) {
             return Collections.emptyList();
         }
@@ -334,14 +312,18 @@ public class DistributedLabelResourceStore
         DeviceId deviceId = request.deviceId();
         long applyNum = request.applyNum();
         Versioned<LabelResourcePool> poolOld = resourcePool.get(deviceId);
+        if (poolOld == null) {
+            log.info("label resource pool not allocated for deviceId {}.", deviceId);
+            return Collections.emptyList();
+        }
         LabelResourcePool pool = poolOld.value();
-        Collection<LabelResource> result = new HashSet<LabelResource>();
+        Collection<LabelResource> result = new HashSet<>();
         long freeNum = this.getFreeNumOfDevicePool(deviceId);
         if (applyNum > freeNum) {
             log.info("the free number of the label resource pool of deviceId {} is not enough.");
             return Collections.emptyList();
         }
-        Set<LabelResource> releaseLabels = new HashSet<LabelResource>(pool.releaseLabelId());
+        Set<LabelResource> releaseLabels = new HashSet<>(pool.releaseLabelId());
         long tmp = releaseLabels.size() > applyNum ? applyNum : releaseLabels
                 .size();
         LabelResource resource = null;
@@ -382,8 +364,8 @@ public class DistributedLabelResourceStore
         Set<DeviceId> deviceIdSet = maps.keySet();
         LabelResourceRequest request = null;
         for (Iterator<DeviceId> it = deviceIdSet.iterator(); it.hasNext();) {
-            DeviceId deviceId = (DeviceId) it.next();
-            Device device = (Device) deviceService.getDevice(deviceId);
+            DeviceId deviceId = it.next();
+            Device device = deviceService.getDevice(deviceId);
             if (device == null) {
                 continue;
             }
@@ -419,12 +401,16 @@ public class DistributedLabelResourceStore
         DeviceId deviceId = request.deviceId();
         Collection<LabelResource> release = request.releaseCollection();
         Versioned<LabelResourcePool> poolOld = resourcePool.get(deviceId);
+        if (poolOld == null) {
+            log.info("the label resource pool of device id {} not allocated");
+            return false;
+        }
         LabelResourcePool pool = poolOld.value();
         if (pool == null) {
             log.info("the label resource pool of device id {} does not exist");
             return false;
         }
-        Set<LabelResource> storeSet = new HashSet<LabelResource>(pool.releaseLabelId());
+        Set<LabelResource> storeSet = new HashSet<>(pool.releaseLabelId());
         LabelResource labelResource = null;
         long realReleasedNum = 0;
         for (Iterator<LabelResource> it = release.iterator(); it.hasNext();) {
@@ -500,7 +486,7 @@ public class DistributedLabelResourceStore
 
     @Override
     public boolean releaseToGlobalPool(Set<LabelResourceId> release) {
-        Set<LabelResource> set = new HashSet<LabelResource>();
+        Set<LabelResource> set = new HashSet<>();
         DefaultLabelResource resource = null;
         for (LabelResourceId labelResource : release) {
             resource = new DefaultLabelResource(DeviceId.deviceId(GLOBAL_RESOURCE_POOL_DEVICE_ID),
@@ -508,7 +494,7 @@ public class DistributedLabelResourceStore
             set.add(resource);
         }
         LabelResourceRequest request = new LabelResourceRequest(DeviceId.deviceId(GLOBAL_RESOURCE_POOL_DEVICE_ID),
-                                                                LabelResourceRequest.Type.APPLY,
+                                                                LabelResourceRequest.Type.RELEASE,
                                                                 0,
                                                                 ImmutableSet.copyOf(set));
         return this.internalRelease(request);

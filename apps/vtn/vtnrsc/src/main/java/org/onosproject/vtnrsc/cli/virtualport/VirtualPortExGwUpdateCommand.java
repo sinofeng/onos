@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import org.apache.karaf.shell.commands.Option;
 import org.onlab.packet.IpAddress;
 import org.onlab.packet.MacAddress;
 import org.onosproject.cli.AbstractShellCommand;
+import org.onosproject.net.DeviceId;
 import org.onosproject.vtnrsc.BindingHostId;
 import org.onosproject.vtnrsc.DefaultVirtualPort;
 import org.onosproject.vtnrsc.FixedIp;
@@ -86,7 +87,7 @@ public class VirtualPortExGwUpdateCommand extends AbstractShellCommand {
                                                          VirtualPort.State.DOWN,
                                                          MacAddress.valueOf(macAddress),
                                                          subnet.tenantId(),
-                                                         null,
+                                                         DeviceId.deviceId(""),
                                                          Sets.newHashSet(fixedGwIp),
                                                          BindingHostId.bindingHostId(""),
                                                          Sets.newHashSet(),

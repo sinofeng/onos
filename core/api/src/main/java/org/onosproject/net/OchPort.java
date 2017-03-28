@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,10 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * Implementation of OCh port (Optical Channel).
  * Also referred to as a line side port (L-port) or narrow band port.
  * See ITU G.709 "Interfaces for the Optical Transport Network (OTN)"
+ *
+ * @deprecated in Goldeneye (1.6.0)
  */
+@Deprecated
 public class OchPort extends DefaultPort {
 
     private final OduSignalType signalType;
@@ -44,7 +47,7 @@ public class OchPort extends DefaultPort {
      */
     public OchPort(Element element, PortNumber number, boolean isEnabled, OduSignalType signalType,
                    boolean isTunable, OchSignal lambda, Annotations... annotations) {
-        super(element, number, isEnabled, Type.OCH, 0, annotations);
+        super(element, number, isEnabled, Type.OCH, checkNotNull(signalType).bitRate(), annotations);
         this.signalType = signalType;
         this.isTunable = isTunable;
         this.lambda = checkNotNull(lambda);

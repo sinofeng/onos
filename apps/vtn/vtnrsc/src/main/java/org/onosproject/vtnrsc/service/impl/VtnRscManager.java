@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,35 +37,47 @@ import org.onosproject.net.Device;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.Host;
 import org.onosproject.net.HostId;
-import org.onosproject.net.host.HostEvent;
-import org.onosproject.net.host.HostListener;
-import org.onosproject.net.host.HostService;
 import org.onosproject.net.device.DeviceService;
+import org.onosproject.net.host.HostService;
 import org.onosproject.store.serializers.KryoNamespaces;
 import org.onosproject.store.service.EventuallyConsistentMap;
 import org.onosproject.store.service.LogicalClockService;
 import org.onosproject.store.service.StorageService;
 import org.onosproject.vtnrsc.FixedIp;
 import org.onosproject.vtnrsc.FloatingIp;
+import org.onosproject.vtnrsc.FlowClassifier;
+import org.onosproject.vtnrsc.PortChain;
+import org.onosproject.vtnrsc.PortPair;
+import org.onosproject.vtnrsc.PortPairGroup;
+import org.onosproject.vtnrsc.PortPairId;
 import org.onosproject.vtnrsc.Router;
+import org.onosproject.vtnrsc.RouterId;
 import org.onosproject.vtnrsc.RouterInterface;
 import org.onosproject.vtnrsc.SegmentationId;
 import org.onosproject.vtnrsc.Subnet;
 import org.onosproject.vtnrsc.SubnetId;
 import org.onosproject.vtnrsc.TenantId;
+import org.onosproject.vtnrsc.TenantRouter;
 import org.onosproject.vtnrsc.VirtualPort;
 import org.onosproject.vtnrsc.VirtualPortId;
-import org.onosproject.vtnrsc.PortPair;
-import org.onosproject.vtnrsc.PortPairId;
-import org.onosproject.vtnrsc.PortPairGroup;
-import org.onosproject.vtnrsc.FlowClassifier;
-import org.onosproject.vtnrsc.PortChain;
 import org.onosproject.vtnrsc.event.VtnRscEvent;
 import org.onosproject.vtnrsc.event.VtnRscEventFeedback;
 import org.onosproject.vtnrsc.event.VtnRscListener;
 import org.onosproject.vtnrsc.floatingip.FloatingIpEvent;
 import org.onosproject.vtnrsc.floatingip.FloatingIpListener;
 import org.onosproject.vtnrsc.floatingip.FloatingIpService;
+import org.onosproject.vtnrsc.flowclassifier.FlowClassifierEvent;
+import org.onosproject.vtnrsc.flowclassifier.FlowClassifierListener;
+import org.onosproject.vtnrsc.flowclassifier.FlowClassifierService;
+import org.onosproject.vtnrsc.portchain.PortChainEvent;
+import org.onosproject.vtnrsc.portchain.PortChainListener;
+import org.onosproject.vtnrsc.portchain.PortChainService;
+import org.onosproject.vtnrsc.portpair.PortPairEvent;
+import org.onosproject.vtnrsc.portpair.PortPairListener;
+import org.onosproject.vtnrsc.portpair.PortPairService;
+import org.onosproject.vtnrsc.portpairgroup.PortPairGroupEvent;
+import org.onosproject.vtnrsc.portpairgroup.PortPairGroupListener;
+import org.onosproject.vtnrsc.portpairgroup.PortPairGroupService;
 import org.onosproject.vtnrsc.router.RouterEvent;
 import org.onosproject.vtnrsc.router.RouterListener;
 import org.onosproject.vtnrsc.router.RouterService;
@@ -75,19 +87,9 @@ import org.onosproject.vtnrsc.routerinterface.RouterInterfaceService;
 import org.onosproject.vtnrsc.service.VtnRscService;
 import org.onosproject.vtnrsc.subnet.SubnetService;
 import org.onosproject.vtnrsc.tenantnetwork.TenantNetworkService;
+import org.onosproject.vtnrsc.virtualport.VirtualPortEvent;
+import org.onosproject.vtnrsc.virtualport.VirtualPortListener;
 import org.onosproject.vtnrsc.virtualport.VirtualPortService;
-import org.onosproject.vtnrsc.portpair.PortPairEvent;
-import org.onosproject.vtnrsc.portpair.PortPairListener;
-import org.onosproject.vtnrsc.portpair.PortPairService;
-import org.onosproject.vtnrsc.portpairgroup.PortPairGroupEvent;
-import org.onosproject.vtnrsc.portpairgroup.PortPairGroupListener;
-import org.onosproject.vtnrsc.portpairgroup.PortPairGroupService;
-import org.onosproject.vtnrsc.flowclassifier.FlowClassifierEvent;
-import org.onosproject.vtnrsc.flowclassifier.FlowClassifierListener;
-import org.onosproject.vtnrsc.flowclassifier.FlowClassifierService;
-import org.onosproject.vtnrsc.portchain.PortChainEvent;
-import org.onosproject.vtnrsc.portchain.PortChainListener;
-import org.onosproject.vtnrsc.portchain.PortChainService;
 import org.slf4j.Logger;
 
 /**
@@ -105,7 +107,6 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
     protected LogicalClockService clockService;
 
     private final Logger log = getLogger(getClass());
-    private HostListener hostListener = new InnerHostListener();
     private FloatingIpListener floatingIpListener = new InnerFloatingIpListener();
     private RouterListener routerListener = new InnerRouterListener();
     private RouterInterfaceListener routerInterfaceListener = new InnerRouterInterfaceListener();
@@ -113,19 +114,22 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
     private PortPairGroupListener portPairGroupListener = new InnerPortPairGroupListener();
     private FlowClassifierListener flowClassifierListener = new InnerFlowClassifierListener();
     private PortChainListener portChainListener = new InnerPortChainListener();
+    private VirtualPortListener virtualPortListener = new InnerVirtualPortListener();
 
-    private EventuallyConsistentMap<TenantId, SegmentationId> l3vniMap;
+    private EventuallyConsistentMap<TenantId, SegmentationId> l3vniTenantMap;
+    private EventuallyConsistentMap<TenantRouter, SegmentationId> l3vniTenantRouterMap;
     private EventuallyConsistentMap<TenantId, Set<DeviceId>> classifierOvsMap;
     private EventuallyConsistentMap<TenantId, Set<DeviceId>> sffOvsMap;
 
     private static final String IFACEID = "ifaceid";
     private static final String RUNNELOPTOPOIC = "tunnel-ops-ids";
-    private static final String LISTENER_NOT_NULL = "listener cannot be null";
     private static final String EVENT_NOT_NULL = "event cannot be null";
     private static final String TENANTID_NOT_NULL = "tenantId cannot be null";
     private static final String DEVICEID_NOT_NULL = "deviceId cannot be null";
-    private static final String OVSMAP_NOT_NULL = "ovsMap cannot be null";
-    private static final String L3VNIMAP = "l3vniMap";
+    private static final String VIRTUALPORTID_NOT_NULL = "virtualPortId cannot be null";
+    private static final String HOST_NOT_NULL = "host cannot be null";
+    private static final String L3VNITENANTMAP = "l3vniTenantMap";
+    private static final String L3VNITENANTROUTERMAP = "l3vniTenantRouterMap";
     private static final String CLASSIFIEROVSMAP = "classifierOvsMap";
     private static final String SFFOVSMAP = "sffOvsMap";
 
@@ -157,7 +161,6 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
     @Activate
     public void activate() {
         eventDispatcher.addSink(VtnRscEvent.class, listenerRegistry);
-        hostService.addListener(hostListener);
         floatingIpService.addListener(floatingIpListener);
         routerService.addListener(routerListener);
         routerInterfaceService.addListener(routerInterfaceListener);
@@ -165,13 +168,21 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
         portPairGroupService.addListener(portPairGroupListener);
         flowClassifierService.addListener(flowClassifierListener);
         portChainService.addListener(portChainListener);
+        virtualPortService.addListener(virtualPortListener);
 
         KryoNamespace.Builder serializer = KryoNamespace.newBuilder()
                 .register(KryoNamespaces.API)
-                .register(TenantId.class, DeviceId.class);
-        l3vniMap = storageService
+                .register(TenantId.class, DeviceId.class, SegmentationId.class,
+                          TenantRouter.class, RouterId.class);
+        l3vniTenantMap = storageService
                 .<TenantId, SegmentationId>eventuallyConsistentMapBuilder()
-                .withName(L3VNIMAP).withSerializer(serializer)
+                .withName(L3VNITENANTMAP).withSerializer(serializer)
+                .withTimestampProvider((k, v) -> clockService.getTimestamp())
+                .build();
+
+        l3vniTenantRouterMap = storageService
+                .<TenantRouter, SegmentationId>eventuallyConsistentMapBuilder()
+                .withName(L3VNITENANTROUTERMAP).withSerializer(serializer)
                 .withTimestampProvider((k, v) -> clockService.getTimestamp())
                 .build();
 
@@ -191,7 +202,6 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
     @Deactivate
     public void deactivate() {
         eventDispatcher.removeSink(VtnRscEvent.class);
-        hostService.removeListener(hostListener);
         floatingIpService.removeListener(floatingIpListener);
         routerService.removeListener(routerListener);
         routerInterfaceService.removeListener(routerInterfaceListener);
@@ -199,8 +209,10 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
         portPairGroupService.removeListener(portPairGroupListener);
         flowClassifierService.removeListener(flowClassifierListener);
         portChainService.removeListener(portChainListener);
+        virtualPortService.removeListener(virtualPortListener);
 
-        l3vniMap.destroy();
+        l3vniTenantMap.destroy();
+        l3vniTenantRouterMap.destroy();
         classifierOvsMap.destroy();
         sffOvsMap.destroy();
         log.info("Stopped");
@@ -209,46 +221,29 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
     @Override
     public SegmentationId getL3vni(TenantId tenantId) {
         checkNotNull(tenantId, "tenantId cannot be null");
-        SegmentationId l3vni = l3vniMap.get(tenantId);
+        SegmentationId l3vni = l3vniTenantMap.get(tenantId);
         if (l3vni == null) {
             long segmentationId = coreService.getIdGenerator(RUNNELOPTOPOIC)
                     .getNewId();
             l3vni = SegmentationId.segmentationId(String
                     .valueOf(segmentationId));
-            l3vniMap.put(tenantId, l3vni);
+            l3vniTenantMap.put(tenantId, l3vni);
         }
         return l3vni;
     }
 
-    private class InnerHostListener implements HostListener {
-
-        @Override
-        public void event(HostEvent event) {
-            checkNotNull(event, EVENT_NOT_NULL);
-            Host host = event.subject();
-            String ifaceId = host.annotations().value(IFACEID);
-            if (ifaceId == null) {
-                log.error("The ifaceId of Host is null");
-                return;
-            }
-            VirtualPortId hPortId = VirtualPortId.portId(ifaceId);
-            TenantId tenantId = virtualPortService.getPort(hPortId).tenantId();
-            DeviceId deviceId = host.location().deviceId();
-            if (HostEvent.Type.HOST_ADDED == event.type()) {
-                if (isServiceFunction(hPortId)) {
-                    addDeviceIdOfOvsMap(tenantId, deviceId, sffOvsMap);
-                } else {
-                    addDeviceIdOfOvsMap(tenantId, deviceId, classifierOvsMap);
-                }
-            } else if (HostEvent.Type.HOST_REMOVED == event.type()) {
-                if (isLastSFHostOfTenant(host, deviceId, tenantId)) {
-                    removeDeviceIdOfOvsMap(tenantId, deviceId, sffOvsMap);
-                }
-                if (isLastClassifierHostOfTenant(host, deviceId, tenantId)) {
-                    removeDeviceIdOfOvsMap(tenantId, deviceId, classifierOvsMap);
-                }
-            }
+    @Override
+    public SegmentationId getL3vni(TenantRouter tenantRouter) {
+        checkNotNull(tenantRouter, "tenantRouter cannot be null");
+        SegmentationId l3vni = l3vniTenantRouterMap.get(tenantRouter);
+        if (l3vni == null) {
+            long segmentationId = coreService.getIdGenerator(RUNNELOPTOPOIC)
+                    .getNewId();
+            l3vni = SegmentationId.segmentationId(String
+                    .valueOf(segmentationId));
+            l3vniTenantRouterMap.put(tenantRouter, l3vni);
         }
+        return l3vni;
     }
 
     private class InnerFloatingIpListener implements FloatingIpListener {
@@ -266,6 +261,18 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
             if (FloatingIpEvent.Type.FLOATINGIP_DELETE == event.type()) {
                 notifyListeners(new VtnRscEvent(
                                                 VtnRscEvent.Type.FLOATINGIP_DELETE,
+                                                new VtnRscEventFeedback(
+                                                                        floatingIp)));
+            }
+            if (FloatingIpEvent.Type.FLOATINGIP_BIND == event.type()) {
+                notifyListeners(new VtnRscEvent(
+                                                VtnRscEvent.Type.FLOATINGIP_BIND,
+                                                new VtnRscEventFeedback(
+                                                                        floatingIp)));
+            }
+            if (FloatingIpEvent.Type.FLOATINGIP_UNBIND == event.type()) {
+                notifyListeners(new VtnRscEvent(
+                                                VtnRscEvent.Type.FLOATINGIP_UNBIND,
                                                 new VtnRscEventFeedback(
                                                                         floatingIp)));
             }
@@ -399,6 +406,22 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
         }
     }
 
+    private class InnerVirtualPortListener implements VirtualPortListener {
+
+        @Override
+        public void event(VirtualPortEvent event) {
+            checkNotNull(event, EVENT_NOT_NULL);
+            VirtualPort virtualPort = event.subject();
+            if (VirtualPortEvent.Type.VIRTUAL_PORT_PUT == event.type()) {
+                notifyListeners(new VtnRscEvent(VtnRscEvent.Type.VIRTUAL_PORT_PUT,
+                                                new VtnRscEventFeedback(virtualPort)));
+            } else if (VirtualPortEvent.Type.VIRTUAL_PORT_DELETE == event.type()) {
+                notifyListeners(new VtnRscEvent(VtnRscEvent.Type.VIRTUAL_PORT_DELETE,
+                                                new VtnRscEventFeedback(virtualPort)));
+            }
+        }
+    }
+
     @Override
     public Iterator<Device> getClassifierOfTenant(TenantId tenantId) {
         checkNotNull(tenantId, TENANTID_NOT_NULL);
@@ -413,7 +436,7 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
     }
 
     @Override
-    public Iterator<Device> getSFFOfTenant(TenantId tenantId) {
+    public Iterator<Device> getSffOfTenant(TenantId tenantId) {
         checkNotNull(tenantId, TENANTID_NOT_NULL);
         Set<DeviceId> deviceIdSet = sffOvsMap.get(tenantId);
         Set<Device> deviceSet = new HashSet<>();
@@ -454,7 +477,7 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
     }
 
     @Override
-    public DeviceId getSFToSFFMaping(VirtualPortId portId) {
+    public DeviceId getSfToSffMaping(VirtualPortId portId) {
         checkNotNull(portId, "portId cannot be null");
         VirtualPort vmPort = virtualPortService.getPort(portId);
         Set<Host> hostSet = hostService.getHostsByMac(vmPort.macAddress());
@@ -464,6 +487,32 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
             }
         }
         return null;
+    }
+
+    @Override
+    public void addDeviceIdOfOvsMap(VirtualPortId virtualPortId,
+                                    TenantId tenantId, DeviceId deviceId) {
+        checkNotNull(virtualPortId, VIRTUALPORTID_NOT_NULL);
+        checkNotNull(tenantId, TENANTID_NOT_NULL);
+        checkNotNull(deviceId, DEVICEID_NOT_NULL);
+        if (isServiceFunction(virtualPortId)) {
+            addDeviceIdToSpecificMap(tenantId, deviceId, sffOvsMap);
+        } else {
+            addDeviceIdToSpecificMap(tenantId, deviceId, classifierOvsMap);
+        }
+    }
+
+    @Override
+    public void removeDeviceIdOfOvsMap(Host host, TenantId tenantId, DeviceId deviceId) {
+        checkNotNull(host, HOST_NOT_NULL);
+        checkNotNull(tenantId, TENANTID_NOT_NULL);
+        checkNotNull(deviceId, DEVICEID_NOT_NULL);
+        if (isLastSFHostOfTenant(host, deviceId, tenantId)) {
+            removeDeviceIdToSpecificMap(tenantId, deviceId, sffOvsMap);
+        }
+        if (isLastClassifierHostOfTenant(host, deviceId, tenantId)) {
+            removeDeviceIdToSpecificMap(tenantId, deviceId, classifierOvsMap);
+        }
     }
 
     /**
@@ -477,11 +526,7 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
      */
     private boolean isLastSFHostOfTenant(Host host, DeviceId deviceId,
                                          TenantId tenantId) {
-        checkNotNull(host, "host cannot be null");
-        checkNotNull(deviceId, DEVICEID_NOT_NULL);
-        checkNotNull(tenantId, TENANTID_NOT_NULL);
         Set<Host> hostSet = hostService.getConnectedHosts(deviceId);
-        Set<Host> sfcHostSet = new HashSet<Host>();
         if (hostSet != null) {
             for (Host h : hostSet) {
                 String ifaceId = h.annotations().value(IFACEID);
@@ -490,15 +535,14 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
                     if (virtualPortService.getPort(hPortId).tenantId().tenantId()
                             .equals(tenantId.tenantId())
                             && isServiceFunction(hPortId)) {
-                        sfcHostSet.add(h);
+                        if (!h.equals(host)) {
+                            return false;
+                        }
                     }
                 }
             }
         }
-        if (sfcHostSet.size() == 1 && sfcHostSet.contains(host)) {
-            return true;
-        }
-        return false;
+        return true;
     }
 
     /**
@@ -512,11 +556,7 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
      */
     private boolean isLastClassifierHostOfTenant(Host host, DeviceId deviceId,
                                                  TenantId tenantId) {
-        checkNotNull(host, "host cannot be null");
-        checkNotNull(deviceId, DEVICEID_NOT_NULL);
-        checkNotNull(tenantId, TENANTID_NOT_NULL);
         Set<Host> hostSet = hostService.getConnectedHosts(deviceId);
-        Set<Host> sfcHostSet = new HashSet<Host>();
         if (hostSet != null) {
             for (Host h : hostSet) {
                 String ifaceId = h.annotations().value(IFACEID);
@@ -525,15 +565,14 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
                     if (virtualPortService.getPort(hPortId).tenantId().tenantId()
                             .equals(tenantId.tenantId())
                             && !isServiceFunction(hPortId)) {
-                        sfcHostSet.add(h);
+                        if (!h.equals(host)) {
+                            return false;
+                        }
                     }
                 }
             }
         }
-        if (sfcHostSet.size() == 1 && sfcHostSet.contains(host)) {
-            return true;
-        }
-        return false;
+        return true;
     }
 
     /**
@@ -543,12 +582,9 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
      * @param deviceId the device identifier
      * @param ovsMap the instance of map to store device identifier
      */
-    private void addDeviceIdOfOvsMap(TenantId tenantId,
+    private void addDeviceIdToSpecificMap(TenantId tenantId,
                                      DeviceId deviceId,
                                      EventuallyConsistentMap<TenantId, Set<DeviceId>> ovsMap) {
-        checkNotNull(tenantId, TENANTID_NOT_NULL);
-        checkNotNull(deviceId, DEVICEID_NOT_NULL);
-        checkNotNull(ovsMap, OVSMAP_NOT_NULL);
         if (ovsMap.containsKey(tenantId)) {
             Set<DeviceId> deviceIdSet = ovsMap.get(tenantId);
             deviceIdSet.add(deviceId);
@@ -567,14 +603,11 @@ public class VtnRscManager extends AbstractListenerManager<VtnRscEvent, VtnRscLi
      * @param deviceId the device identifier
      * @param ovsMap the instance of map to store device identifier
      */
-    private void removeDeviceIdOfOvsMap(TenantId tenantId,
+    private void removeDeviceIdToSpecificMap(TenantId tenantId,
                                         DeviceId deviceId,
                                         EventuallyConsistentMap<TenantId, Set<DeviceId>> ovsMap) {
-        checkNotNull(tenantId, TENANTID_NOT_NULL);
-        checkNotNull(deviceId, DEVICEID_NOT_NULL);
-        checkNotNull(ovsMap, OVSMAP_NOT_NULL);
         Set<DeviceId> deviceIdSet = ovsMap.get(tenantId);
-        if (deviceIdSet.size() > 1) {
+        if (deviceIdSet != null && deviceIdSet.size() > 1) {
             deviceIdSet.remove(deviceId);
             ovsMap.put(tenantId, deviceIdSet);
         } else {

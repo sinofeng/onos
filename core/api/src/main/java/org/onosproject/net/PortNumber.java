@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2014-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package org.onosproject.net;
 
+import com.google.common.base.Objects;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.collect.ImmutableMap;
@@ -44,20 +45,22 @@ public final class PortNumber {
     static final long NORMAL_NUMBER = -6L;
     static final long FLOOD_NUMBER = -5L;
     static final long ALL_NUMBER = -4L;
-    static final long LOCAL_NUMBER = -2L;
     static final long CONTROLLER_NUMBER = -3L;
+    static final long LOCAL_NUMBER = -2L;
+    static final long ANY_NUMBER = -1L;
 
     /**
      * Logical PortNumbers.
      */
-    public static enum Logical {
+    public enum Logical {
         IN_PORT(IN_PORT_NUMBER),
         TABLE(TABLE_NUMBER),
         NORMAL(NORMAL_NUMBER),
         FLOOD(FLOOD_NUMBER),
         ALL(ALL_NUMBER),
         LOCAL(LOCAL_NUMBER),
-        CONTROLLER(CONTROLLER_NUMBER);
+        CONTROLLER(CONTROLLER_NUMBER),
+        ANY(ANY_NUMBER);
 
         private final long number;
         private final PortNumber instance;
@@ -88,10 +91,11 @@ public final class PortNumber {
     public static final PortNumber ALL = new PortNumber(ALL_NUMBER);
     public static final PortNumber LOCAL = new PortNumber(LOCAL_NUMBER);
     public static final PortNumber CONTROLLER = new PortNumber(CONTROLLER_NUMBER);
+    public static final PortNumber ANY = new PortNumber(ANY_NUMBER);
 
     // lazily populated Logical port number to PortNumber
     static final Supplier<Map<Long, Logical>> LOGICAL = Suppliers.memoize(() -> {
-            Builder<Long, Logical> builder = ImmutableMap.<Long, Logical>builder();
+            Builder<Long, Logical> builder = ImmutableMap.builder();
             for (Logical lp : Logical.values()) {
                 builder.put(lp.number(), lp);
             }
@@ -269,5 +273,22 @@ public final class PortNumber {
             return this.number == other.number;
         }
         return false;
+    }
+
+    /**
+     * Indicates whether some other PortNumber object is equal to this one
+     * including it's name.
+     *
+     * @param that other {@link PortNumber} instance to compare
+     * @return true if equal, false otherwise
+     */
+    public boolean exactlyEquals(PortNumber that) {
+        if (this == that) {
+            return true;
+        }
+
+        return this.equals(that) &&
+               this.hasName == that.hasName &&
+               Objects.equal(this.name, that.name);
     }
 }

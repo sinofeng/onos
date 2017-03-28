@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,6 @@
     var webSockOpts,            // web socket options
         ws = null,              // web socket reference
         wsUp = false,           // web socket is good to go
-        sid = 0,                // event sequence identifier
         handlers = {},          // event handler bindings
         pendingEvents = [],     // events TX'd while socket not up
         host,                   // web socket host
@@ -36,13 +35,16 @@
         clusterIndex = -1,      // the instance to which we are connected
         connectRetries = 0,     // limit our attempts at reconnecting
         openListeners = {},     // registered listeners for websocket open()
-        nextListenerId = 1;     // internal ID for open listeners
+        nextListenerId = 1,     // internal ID for open listeners
+        loggedInUser = null;    // name of logged-in user
 
     // =======================
     // === Bootstrap Handler
 
     var builtinHandlers = {
         bootstrap: function (data) {
+            $log.debug('bootstrap data', data);
+            loggedInUser = data.user;
             clusterNodes = data.clusterNodes;
             clusterNodes.forEach(function (d, i) {
                 if (d.uiAttached) {
@@ -54,12 +56,13 @@
         }
     };
 
+
     // ==========================
     // === Web socket callbacks
 
     function handleOpen() {
         $log.info('Web socket open - ', url);
-        vs.hide();
+        vs && vs.hide();
 
         if (fs.debugOn('txrx')) {
             $log.debug('Sending ' + pendingEvents.length + ' pending event(s)...');
@@ -104,15 +107,15 @@
     function handleClose() {
         var gsucc;
 
-        $log.info('Web socket closed');
-        ls.stop();
+        $log.warn('Web socket closed');
+        ls && ls.stop();
         wsUp = false;
 
         if (gsucc = findGuiSuccessor()) {
             createWebSocket(webSockOpts, gsucc);
         } else {
             // If no controllers left to contact, show the Veil...
-            vs.show([
+            vs && vs.show([
                 'Oops!',
                 'Web-socket connection to server closed...',
                 'Try refreshing the page.'
@@ -163,9 +166,6 @@
     // === API Functions
 
     // Required for unit tests to set to known state
-    function resetSid() {
-        sid = 0;
-    }
     function resetState() {
         webSockOpts = undefined;
         ws = null;
@@ -174,7 +174,6 @@
         url = undefined;
         pendingEvents = [];
         handlers = {};
-        sid = 0;
         clusterNodes = [];
         clusterIndex = -1;
         connectRetries = 0;
@@ -252,6 +251,8 @@
         });
     }
 
+    // TODO: simplify listener handling (see theme.js for sample code)
+
     function addOpenListener(callback) {
         var id = nextListenerId++,
             cb = fs.isF(callback),
@@ -285,7 +286,6 @@
     function sendEvent(evType, payload) {
         var ev = {
                 event: evType,
-                sid: ++sid,
                 payload: payload || {}
             };
 
@@ -296,27 +296,33 @@
         }
     }
 
+    // Binds the veil service as a delegate
+    function setVeilDelegate(vd) {
+        vs = vd;
+    }
+
+    // Binds the loading service as a delegate
+    function setLoadingDelegate(ld) {
+        ls = ld;
+    }
+
 
     // ============================
     // ===== Definition of module
     angular.module('onosRemote')
     .factory('WebSocketService',
         ['$log', '$location', 'FnService', 'UrlFnService', 'WSock',
-            'VeilService', 'LoadingService',
 
-        function (_$log_, _$loc_, _fs_, _ufs_, _wsock_, _vs_, _ls_) {
+        function (_$log_, _$loc_, _fs_, _ufs_, _wsock_) {
             $log = _$log_;
             $loc = _$loc_;
             fs = _fs_;
             ufs = _ufs_;
             wsock = _wsock_;
-            vs = _vs_;
-            ls = _ls_;
 
             bindHandlers(builtinHandlers);
 
             return {
-                resetSid: resetSid,
                 resetState: resetState,
                 createWebSocket: createWebSocket,
                 bindHandlers: bindHandlers,
@@ -324,7 +330,11 @@
                 addOpenListener: addOpenListener,
                 removeOpenListener: removeOpenListener,
                 sendEvent: sendEvent,
-                isConnected: function () { return wsUp; }
+                isConnected: function () { return wsUp; },
+                loggedInUser: function () { return loggedInUser || '(no-one)'; },
+
+                _setVeilDelegate: setVeilDelegate,
+                _setLoadingDelegate: setLoadingDelegate
             };
         }
     ]);

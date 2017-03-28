@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,6 @@ import org.onlab.packet.IpAddress;
 import org.onlab.packet.MacAddress;
 import org.onlab.packet.VlanId;
 import org.onlab.util.KryoNamespace;
-import org.onlab.util.Tools;
 import org.onosproject.net.Annotations;
 import org.onosproject.net.ConnectPoint;
 import org.onosproject.net.DefaultAnnotations;
@@ -45,12 +44,10 @@ import org.onosproject.net.provider.ProviderId;
 import org.onosproject.store.AbstractStore;
 import org.onosproject.store.serializers.KryoNamespaces;
 import org.onosproject.store.service.ConsistentMap;
-import org.onosproject.store.service.ConsistentMapException;
 import org.onosproject.store.service.MapEvent;
 import org.onosproject.store.service.MapEventListener;
 import org.onosproject.store.service.Serializer;
 import org.onosproject.store.service.StorageService;
-import org.onosproject.store.service.Versioned;
 import org.slf4j.Logger;
 
 import java.util.Collection;
@@ -58,9 +55,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -83,11 +78,8 @@ public class DistributedHostStore
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected StorageService storageService;
 
-    private ConsistentMap<HostId, DefaultHost> host;
+    private ConsistentMap<HostId, DefaultHost> hostsConsistentMap;
     private Map<HostId, DefaultHost> hosts;
-
-    private final ConcurrentHashMap<HostId, DefaultHost> prevHosts =
-            new ConcurrentHashMap<>();
 
     private MapEventListener<HostId, DefaultHost> hostLocationTracker =
             new HostLocationTracker();
@@ -97,25 +89,23 @@ public class DistributedHostStore
         KryoNamespace.Builder hostSerializer = KryoNamespace.newBuilder()
                 .register(KryoNamespaces.API);
 
-        host = storageService.<HostId, DefaultHost>consistentMapBuilder()
+        hostsConsistentMap = storageService.<HostId, DefaultHost>consistentMapBuilder()
                 .withName("onos-hosts")
                 .withRelaxedReadConsistency()
                 .withSerializer(Serializer.using(hostSerializer.build()))
                 .build();
 
-        hosts = host.asJavaMap();
+        hosts = hostsConsistentMap.asJavaMap();
 
-        prevHosts.putAll(hosts);
 
-        host.addListener(hostLocationTracker);
+        hostsConsistentMap.addListener(hostLocationTracker);
 
         log.info("Started");
     }
 
     @Deactivate
     public void deactivate() {
-        host.removeListener(hostLocationTracker);
-        prevHosts.clear();
+        hostsConsistentMap.removeListener(hostLocationTracker);
 
         log.info("Stopped");
     }
@@ -127,6 +117,11 @@ public class DistributedHostStore
                                  boolean replaceIPs) {
         if (existingHost == null) {
             return true;
+        }
+
+        // Avoid overriding configured hosts
+        if (existingHost.configured()) {
+            return false;
         }
 
         if (!Objects.equals(existingHost.providerId(), providerId) ||
@@ -162,8 +157,7 @@ public class DistributedHostStore
                                         HostId hostId,
                                         HostDescription hostDescription,
                                         boolean replaceIPs) {
-        Supplier<Versioned<DefaultHost>> supplier =
-                () -> host.computeIf(hostId,
+        hostsConsistentMap.computeIf(hostId,
                        existingHost -> shouldUpdate(existingHost, providerId, hostId,
                                                     hostDescription, replaceIPs),
                        (id, existingHost) -> {
@@ -178,11 +172,14 @@ public class DistributedHostStore
                            }
 
                            final Annotations annotations;
+                           final boolean configured;
                            if (existingHost != null) {
                                annotations = merge((DefaultAnnotations) existingHost.annotations(),
                                        hostDescription.annotations());
+                               configured = existingHost.configured();
                            } else {
                                annotations = hostDescription.annotations();
+                               configured = hostDescription.configured();
                            }
 
                            return new DefaultHost(providerId,
@@ -191,14 +188,9 @@ public class DistributedHostStore
                                                   hostDescription.vlan(),
                                                   location,
                                                   addresses,
+                                                  configured,
                                                   annotations);
                        });
-
-        Tools.retryable(supplier,
-                        ConsistentMapException.ConcurrentModification.class,
-                        Integer.MAX_VALUE,
-                        50).get();
-
         return null;
     }
 
@@ -294,13 +286,15 @@ public class DistributedHostStore
     private class HostLocationTracker implements MapEventListener<HostId, DefaultHost> {
         @Override
         public void event(MapEvent<HostId, DefaultHost> event) {
-            DefaultHost host = checkNotNull(event.value().value());
-            Host prevHost = prevHosts.put(host.id(), host);
+            Host host;
             switch (event.type()) {
                 case INSERT:
+                    host = checkNotNull(event.newValue().value());
                     notifyDelegate(new HostEvent(HOST_ADDED, host));
                     break;
                 case UPDATE:
+                    host = checkNotNull(event.newValue().value());
+                    Host prevHost = checkNotNull(event.oldValue().value());
                     if (!Objects.equals(prevHost.location(), host.location())) {
                         notifyDelegate(new HostEvent(HOST_MOVED, host, prevHost));
                     } else if (!Objects.equals(prevHost, host)) {
@@ -308,9 +302,8 @@ public class DistributedHostStore
                     }
                     break;
                 case REMOVE:
-                    if (prevHosts.remove(host.id()) != null) {
-                        notifyDelegate(new HostEvent(HOST_REMOVED, host));
-                    }
+                    host = checkNotNull(event.oldValue().value());
+                    notifyDelegate(new HostEvent(HOST_REMOVED, host));
                     break;
                 default:
                     log.warn("Unknown map event type: {}", event.type());

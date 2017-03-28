@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -172,30 +172,42 @@ public abstract class TopologySimulator {
     protected abstract void createHosts();
 
     /**
-     * Creates simulated device.
+     * Creates simulated device and adds its id to the list of devices ids.
      *
      * @param i index of the device id in the list.
      */
     protected void createDevice(int i) {
         DeviceId id = DeviceId.deviceId(SCHEME + ":" + toHex(i));
-        DeviceDescription desc =
-                new DefaultDeviceDescription(id.uri(), Device.Type.SWITCH,
-                                             "ON.Lab", "0.1", "0.1", "1234",
-                                             new ChassisId(i));
         deviceIds.add(id);
-        deviceProviderService.deviceConnected(id, desc);
-        deviceProviderService.updatePorts(id, buildPorts(hostCount + infrastructurePorts));
+        createDevice(id, i);
     }
 
-//    /**
-//     * Creates simulated link between two devices on port 1 and port 2.
-//     *
-//     * @param i  index of one simulated device
-//     * @param j  index of another simulated device
-//     */
-//    protected void createLink(int i, int j) {
-//        createLink(i, j, 1, 2);
-//    }
+    /**
+     * Creates simulated device.
+     *
+     * @param id        device identifier
+     * @param chassisId chassis identifier number
+     */
+    public void createDevice(DeviceId id, int chassisId) {
+        createDevice(id, chassisId, Device.Type.SWITCH, hostCount + infrastructurePorts);
+    }
+
+    /**
+     * Creates simulated device.
+     *
+     * @param id        device identifier
+     * @param chassisId chassis identifier number
+     * @param type      device type
+     * @param portCount number of device ports
+     */
+    public void createDevice(DeviceId id, int chassisId, Device.Type type, int portCount) {
+        DeviceDescription desc =
+                new DefaultDeviceDescription(id.uri(), type,
+                                             "ON.Lab", "0.1", "0.1", "1234",
+                                             new ChassisId(chassisId));
+        deviceProviderService.deviceConnected(id, desc);
+        deviceProviderService.updatePorts(id, buildPorts(portCount));
+    }
 
     /**
      * Creates simulated link between two devices.
@@ -205,11 +217,35 @@ public abstract class TopologySimulator {
      * @param pi port number of i-th device
      * @param pj port number of j-th device
      */
-    protected void createLink(int i, int j, int pi, int pj) {
+    public void createLink(int i, int j, int pi, int pj) {
         ConnectPoint one = new ConnectPoint(deviceIds.get(i), PortNumber.portNumber(pi));
         ConnectPoint two = new ConnectPoint(deviceIds.get(j), PortNumber.portNumber(pj));
-        linkProviderService.linkDetected(new DefaultLinkDescription(one, two, DIRECT));
-        linkProviderService.linkDetected(new DefaultLinkDescription(two, one, DIRECT));
+        createLink(one, two);
+    }
+
+    /**
+     * Creates simulated link between two connection points.
+     *
+     * @param one one connection point
+     * @param two another connection point
+     */
+    public void createLink(ConnectPoint one, ConnectPoint two) {
+        createLink(one, two, DIRECT, true);
+    }
+
+    /**
+     * Creates simulated link between two connection points.
+     *
+     * @param one             one connection point
+     * @param two             another connection point
+     * @param type            link type
+     * @param isBidirectional true if link is bidirectional
+     */
+    public void createLink(ConnectPoint one, ConnectPoint two, Link.Type type, boolean isBidirectional) {
+        linkProviderService.linkDetected(new DefaultLinkDescription(one, two, type));
+        if (isBidirectional) {
+            linkProviderService.linkDetected(new DefaultLinkDescription(two, one, type));
+        }
     }
 
     /**
@@ -218,9 +254,9 @@ public abstract class TopologySimulator {
      * @param deviceId   device identifier
      * @param portOffset port offset where to start attaching hosts
      */
-    protected void createHosts(DeviceId deviceId, int portOffset) {
+    public void createHosts(DeviceId deviceId, int portOffset) {
         String s = deviceId.toString();
-        byte dByte = Byte.parseByte(s.substring(s.length() - 1), 16);
+        byte dByte = Byte.parseByte(s.substring(s.length() - 2), 16);
         // TODO: this limits the simulation to 256 devices & 256 hosts/device.
         byte[] macBytes = new byte[]{0, 0, 0, 0, dByte, 0};
         byte[] ipBytes = new byte[]{(byte) 192, (byte) 168, dByte, 0};
@@ -231,7 +267,7 @@ public abstract class TopologySimulator {
             ipBytes[3] = (byte) (i + 1);
             HostId id = hostId(MacAddress.valueOf(macBytes), VlanId.NONE);
             IpAddress ip = IpAddress.valueOf(IpAddress.Version.INET, ipBytes);
-            hostProviderService.hostDetected(id, description(id, ip, deviceId, port));
+            hostProviderService.hostDetected(id, description(id, ip, deviceId, port), false);
         }
     }
 
@@ -351,7 +387,7 @@ public abstract class TopologySimulator {
      */
     protected List<PortDescription> buildPorts(int portCount) {
         List<PortDescription> ports = Lists.newArrayList();
-        for (int i = 0; i < portCount; i++) {
+        for (int i = 1; i <= portCount; i++) {
             ports.add(new DefaultPortDescription(PortNumber.portNumber(i), true,
                                                  Port.Type.COPPER, 0));
         }
@@ -359,7 +395,7 @@ public abstract class TopologySimulator {
     }
 
     /**
-     * Indicates whether or not the simulation knows of this device.
+     * Indicates whether or not the simulation deeps the device as available.
      *
      * @param deviceId device identifier
      * @return true if device is known

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -128,5 +128,44 @@ public interface NetworkConfigStore extends Store<NetworkConfigEvent, NetworkCon
      * @param <C>         type of configuration
      */
     <S, C extends Config<S>> void clearConfig(S subject, Class<C> configClass);
+
+    /**
+     * Queues pending configuration for the specified subject and configuration
+     * class using the raw JSON object.
+     *
+     * @param subject   configuration subject
+     * @param configKey configuration key
+     * @param json      raw JSON node containing the configuration data
+     * @param <S>       type of subject
+     * @throws IllegalArgumentException if the supplied JSON node contains
+     *                                  invalid data
+     */
+    <S> void queueConfig(S subject, String configKey, JsonNode json);
+
+    /**
+     * Clears the configuration of the given class for the specified subject.
+     *
+     * @param subject   configuration subject
+     * @param configKey configuration key
+     * @param <S>       type of subject
+     */
+    <S> void clearQueuedConfig(S subject, String configKey);
+
+    /**
+     * Clears the  configuration based on the subject including queued.
+     * If does not exists this call has no effect.
+     *
+     * @param <S>               type of subject
+     * @param subject   configuration subject
+     */
+    <S> void clearConfig(S subject);
+
+    /**
+     * Clears the complete configuration including queued.
+     * If does not exists this call has no effect.
+     *
+     * @param <S>               type of subject
+     */
+    <S> void clearConfig();
 
 }

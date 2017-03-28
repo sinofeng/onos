@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.google.common.io.ByteStreams;
 import com.google.common.io.Files;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.onlab.util.Tools;
 import org.onosproject.app.ApplicationDescription;
@@ -39,6 +40,7 @@ import static org.onosproject.app.DefaultApplicationDescriptionTest.*;
 public class ApplicationArchiveTest {
 
     static final File STORE = Files.createTempDir();
+    static final String SYSTEM = "system";
 
     private ApplicationArchive aar = new ApplicationArchive();
 
@@ -51,6 +53,7 @@ public class ApplicationArchiveTest {
     public void tearDown() throws IOException {
         if (STORE.exists()) {
             Tools.removeDirectory(STORE);
+            Tools.removeDirectory(SYSTEM);
         }
     }
 
@@ -60,6 +63,11 @@ public class ApplicationArchiveTest {
         assertEquals("incorrect origin", ORIGIN, app.origin());
         assertEquals("incorrect role", ROLE, app.role());
 
+        assertEquals("incorrect category", CATEGORY, app.category());
+        assertEquals("incorrect url", URL, app.url());
+        assertEquals("incorrect readme", README, app.readme());
+
+        assertEquals("incorrect title", TITLE, app.title());
         assertEquals("incorrect description", DESC, app.description());
         assertEquals("incorrect features URI", FURL, app.featuresRepo().get());
         assertEquals("incorrect permissions", PERMS, app.permissions());
@@ -77,6 +85,14 @@ public class ApplicationArchiveTest {
     @Test
     public void savePlainApp() throws IOException {
         InputStream stream = getClass().getResourceAsStream("app.xml");
+        ApplicationDescription app = aar.saveApplication(stream);
+        validate(app);
+        stream.close();
+    }
+
+    @Test
+    public void saveSelfContainedApp() throws IOException {
+        InputStream stream = getClass().getResourceAsStream("app.scj");
         ApplicationDescription app = aar.saveApplication(stream);
         validate(app);
         stream.close();
@@ -145,6 +161,7 @@ public class ApplicationArchiveTest {
     }
 
     @Test(expected = ApplicationException.class)
+    @Ignore("No longer needed")
     public void setBadActive() throws IOException {
         aar.setActive("org.foo.BAD");
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,11 +31,11 @@ import org.onosproject.net.flow.DefaultTrafficTreatment;
 import org.onosproject.net.flow.TrafficSelector;
 import org.onosproject.net.flow.TrafficTreatment;
 import org.onosproject.net.intent.Intent;
+import org.onosproject.net.intent.IntentCompilationException;
 import org.onosproject.net.intent.IntentData;
 import org.onosproject.net.intent.MockIdGenerator;
 import org.onosproject.net.intent.PathIntent;
 import org.onosproject.net.intent.PointToPointIntent;
-import org.onosproject.net.intent.impl.IntentCompilationException;
 import org.onosproject.net.intent.impl.IntentProcessor;
 import org.onosproject.net.provider.ProviderId;
 import org.onosproject.store.Timestamp;
@@ -70,7 +70,8 @@ public class CompilingTest {
     private final ConnectPoint cp3 = new ConnectPoint(deviceId("2"), portNumber(1));
     private final ConnectPoint cp4 = new ConnectPoint(deviceId("2"), portNumber(2));
 
-    private final List<Link> links = Collections.singletonList(new DefaultLink(pid, cp2, cp4, DIRECT));
+    private final List<Link> links = Collections.singletonList(
+            DefaultLink.builder().providerId(pid).src(cp2).dst(cp4).type(DIRECT).build());
     private final Path path = new DefaultPath(pid, links, 10);
 
     private PointToPointIntent input;
@@ -87,6 +88,7 @@ public class CompilingTest {
 
         idGenerator = new MockIdGenerator();
 
+        Intent.unbindIdGenerator(idGenerator);
         Intent.bindIdGenerator(idGenerator);
 
         // Intent creation should be placed after binding an ID generator

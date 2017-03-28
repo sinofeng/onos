@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,17 @@
  */
 package org.onosproject.segmentrouting.grouphandler;
 
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-
 import org.onosproject.core.ApplicationId;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.Link;
 import org.onosproject.net.flowobjective.FlowObjectiveService;
 import org.onosproject.net.link.LinkService;
+import org.onosproject.segmentrouting.SegmentRoutingManager;
 import org.onosproject.segmentrouting.config.DeviceProperties;
-import org.onosproject.store.service.EventuallyConsistentMap;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * Default ECMP group handler creation module for an edge device.
@@ -46,21 +46,13 @@ import org.onosproject.store.service.EventuallyConsistentMap;
  * 8) what about ecmp no label case
  */
 public class DefaultEdgeGroupHandler extends DefaultGroupHandler {
-
     protected DefaultEdgeGroupHandler(DeviceId deviceId,
                                   ApplicationId appId,
                                   DeviceProperties config,
                                   LinkService linkService,
                                   FlowObjectiveService flowObjService,
-                                  EventuallyConsistentMap<
-                                          NeighborSetNextObjectiveStoreKey,
-                                          Integer> nsNextObjStore,
-                                  EventuallyConsistentMap<SubnetNextObjectiveStoreKey,
-                                          Integer> subnetNextObjStore,
-                                  EventuallyConsistentMap<PortNextObjectiveStoreKey,
-                                          Integer> portNextObjStore) {
-        super(deviceId, appId, config, linkService, flowObjService,
-              nsNextObjStore, subnetNextObjStore, portNextObjStore);
+                                  SegmentRoutingManager srManager) {
+        super(deviceId, appId, config, linkService, flowObjService, srManager);
     }
 
     @Override
@@ -84,7 +76,8 @@ public class DefaultEdgeGroupHandler extends DefaultGroupHandler {
             List<Integer> groupSegmentIds =
                     getSegmentIdsTobePairedWithNeighborSet(combo);
             for (Integer sId : groupSegmentIds) {
-                NeighborSet ns = new NeighborSet(combo, sId);
+                // For these NeighborSet isMpls is meaningless.
+                NeighborSet ns = new NeighborSet(combo, false, sId);
                 log.trace("createGroupsAtEdgeRouter: sw {} "
                         + "combo {} sId {} ns {}",
                         deviceId, combo, sId, ns);
@@ -171,7 +164,8 @@ public class DefaultEdgeGroupHandler extends DefaultGroupHandler {
             List<Integer> groupSegmentIds =
                     getSegmentIdsTobePairedWithNeighborSet(combo);
             for (Integer sId : groupSegmentIds) {
-                NeighborSet ns = new NeighborSet(combo, sId);
+                // For these NeighborSet isMpls is meaningless.
+                NeighborSet ns = new NeighborSet(combo, false, sId);
                 log.trace("computeImpactedNeighborsetForPortEvent: sw {} "
                         + "combo {} sId {} ns {}",
                         deviceId, combo, sId, ns);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Open Networking Laboratory
+ * Copyright 2014-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import org.onosproject.net.AbstractDescription;
 import org.onosproject.net.PortNumber;
 import org.onosproject.net.SparseAnnotations;
 
+import static com.google.common.base.Preconditions.checkNotNull;
 import static org.onosproject.net.Port.Type;
 import com.google.common.base.Objects;
 
@@ -33,11 +34,12 @@ public class DefaultPortDescription extends AbstractDescription
 
     private final PortNumber number;
     private final boolean isEnabled;
+    private final boolean isRemoved;
     private final Type type;
     private final long portSpeed;
 
     /**
-     * Creates a port description using the supplied information.
+     * Creates a DEFAULT_SPEED COPPER port description using the supplied information.
      *
      * @param number      port number
      * @param isEnabled   port enabled state
@@ -60,17 +62,35 @@ public class DefaultPortDescription extends AbstractDescription
     public DefaultPortDescription(PortNumber number, boolean isEnabled,
                                   Type type, long portSpeed,
                                   SparseAnnotations...annotations) {
+        this(number, isEnabled, false, type, portSpeed, annotations);
+    }
+
+    /**
+     * Creates a port description using the supplied information.
+     *
+     * @param number      port number
+     * @param isEnabled   port enabled state
+     * @param isRemoved   port removed state
+     * @param type        port type
+     * @param portSpeed   port speed in Mbps
+     * @param annotations optional key/value annotations map
+     */
+    public DefaultPortDescription(PortNumber number, boolean isEnabled, boolean isRemoved,
+                                  Type type, long portSpeed,
+                                  SparseAnnotations...annotations) {
         super(annotations);
-        this.number = number;
+        this.number = checkNotNull(number);
         this.isEnabled = isEnabled;
+        this.isRemoved = isRemoved;
         this.type = type;
         this.portSpeed = portSpeed;
     }
 
     // Default constructor for serialization
-    private DefaultPortDescription() {
+    protected DefaultPortDescription() {
         this.number = null;
         this.isEnabled = false;
+        this.isRemoved = false;
         this.portSpeed = DEFAULT_SPEED;
         this.type = Type.COPPER;
     }
@@ -87,6 +107,19 @@ public class DefaultPortDescription extends AbstractDescription
              annotations);
     }
 
+    /**
+     * Creates a port description using the supplied information.
+     *
+     * @param base port description to copy fields from
+     * @param annotations to be used in the copied description.
+     *        Note: Annotations on {@code base} will be ignored.
+     * @return copied port description
+     */
+    public static DefaultPortDescription copyReplacingAnnotation(PortDescription base,
+                                                                 SparseAnnotations annotations) {
+        return new DefaultPortDescription(base, annotations);
+    }
+
     @Override
     public PortNumber portNumber() {
         return number;
@@ -95,6 +128,11 @@ public class DefaultPortDescription extends AbstractDescription
     @Override
     public boolean isEnabled() {
         return isEnabled;
+    }
+
+    @Override
+    public boolean isRemoved() {
+        return isRemoved;
     }
 
     @Override

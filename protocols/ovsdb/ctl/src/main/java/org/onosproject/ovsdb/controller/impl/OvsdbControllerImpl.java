@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,7 +47,7 @@ import org.onosproject.ovsdb.rfc.message.UpdateNotification;
 import org.onosproject.ovsdb.rfc.notation.OvsdbMap;
 import org.onosproject.ovsdb.rfc.notation.OvsdbSet;
 import org.onosproject.ovsdb.rfc.notation.Row;
-import org.onosproject.ovsdb.rfc.notation.UUID;
+import org.onosproject.ovsdb.rfc.notation.Uuid;
 import org.onosproject.ovsdb.rfc.schema.DatabaseSchema;
 import org.onosproject.ovsdb.rfc.table.Bridge;
 import org.onosproject.ovsdb.rfc.table.Interface;
@@ -67,6 +67,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Consumer;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -147,6 +148,11 @@ public class OvsdbControllerImpl implements OvsdbController {
         controller.connect(ip, port);
     }
 
+    @Override
+    public void connect(IpAddress ip, TpPort port, Consumer<Exception> failhandler) {
+        controller.connect(ip, port, failhandler);
+    }
+
     /**
      * Implementation of an Ovsdb Agent which is responsible for keeping track
      * of connected node and the state in which they are.
@@ -221,7 +227,7 @@ public class OvsdbControllerImpl implements OvsdbController {
 
         for (String tableName : updates.result().keySet()) {
             TableUpdate update = updates.result().get(tableName);
-            for (UUID uuid : (Set<UUID>) update.rows().keySet()) {
+            for (Uuid uuid : (Set<Uuid>) update.rows().keySet()) {
                 log.debug("Begin to process table updates uuid: {}, databaseName: {}, tableName: {}",
                           uuid.value(), dbName, tableName);
 
@@ -336,7 +342,7 @@ public class OvsdbControllerImpl implements OvsdbController {
         OvsdbSet ofPortSet = (OvsdbSet) intf.getOpenFlowPortColumn().data();
         @SuppressWarnings("unchecked")
         Set<Integer> ofPorts = ofPortSet.set();
-        while (ofPorts == null || ofPorts.size() <= 0) {
+        if (ofPorts == null || ofPorts.isEmpty()) {
             log.debug("The ofport is null in {}", intf.getName());
             return -1;
         }
@@ -368,7 +374,7 @@ public class OvsdbControllerImpl implements OvsdbController {
         OvsdbSet dpidSet = (OvsdbSet) bridge.getDatapathIdColumn().data();
         @SuppressWarnings("unchecked")
         Set<String> dpids = dpidSet.set();
-        if (dpids == null || dpids.size() == 0) {
+        if (dpids == null || dpids.isEmpty()) {
             return 0;
         }
         return stringToLong((String) dpids.toArray()[0]);

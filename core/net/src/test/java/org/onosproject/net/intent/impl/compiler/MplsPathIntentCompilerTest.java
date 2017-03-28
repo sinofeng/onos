@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,6 +43,7 @@ import org.onosproject.net.intent.Intent;
 import org.onosproject.net.intent.IntentExtensionService;
 import org.onosproject.net.intent.MockIdGenerator;
 import org.onosproject.net.intent.MplsPathIntent;
+import org.onosproject.net.resource.MockResourceService;
 
 import static org.easymock.EasyMock.createMock;
 import static org.easymock.EasyMock.expect;
@@ -77,8 +78,8 @@ public class MplsPathIntentCompilerTest {
 
     private final List<Link> links = Arrays.asList(
             createEdgeLink(d1pi, true),
-            new DefaultLink(PID, d1p1, d2p0, DIRECT),
-            new DefaultLink(PID, d2p1, d3p1, DIRECT),
+            DefaultLink.builder().providerId(PID).src(d1p1).dst(d2p0).type(DIRECT).build(),
+            DefaultLink.builder().providerId(PID).src(d2p1).dst(d3p1).type(DIRECT).build(),
             createEdgeLink(d3pe, false)
     );
 
@@ -97,6 +98,7 @@ public class MplsPathIntentCompilerTest {
         sut.coreService = coreService;
         sut.resourceService = new MockResourceService();
 
+        Intent.unbindIdGenerator(idGenerator);
         Intent.bindIdGenerator(idGenerator);
 
         intent = MplsPathIntent.builder()
@@ -126,7 +128,7 @@ public class MplsPathIntentCompilerTest {
     public void testCompile() {
         sut.activate();
 
-        List<Intent> compiled = sut.compile(intent, Collections.emptyList(), Collections.emptySet());
+        List<Intent> compiled = sut.compile(intent, Collections.emptyList());
         assertThat(compiled, hasSize(1));
 
         Collection<FlowRule> rules = ((FlowRuleIntent) compiled.get(0)).flowRules();

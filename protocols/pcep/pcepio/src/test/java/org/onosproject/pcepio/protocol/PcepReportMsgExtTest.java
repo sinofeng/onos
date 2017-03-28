@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.onosproject.pcepio.protocol;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.junit.Test;
+import org.onosproject.pcepio.exceptions.PcepOutOfBoundMessageException;
 import org.onosproject.pcepio.exceptions.PcepParseException;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -32,7 +33,7 @@ public class PcepReportMsgExtTest {
      * in PcRpt message.
      */
     @Test
-    public void reportMessageTest39() throws PcepParseException {
+    public void reportMessageTest39() throws PcepParseException, PcepOutOfBoundMessageException {
 
         byte[] reportMsg = new byte[] {0x20, 0x0a, 0x00, (byte) 0x98,
                 0x21, 0x10, 0x00, 0x0C,  0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x01, //SRP object
@@ -79,7 +80,7 @@ public class PcepReportMsgExtTest {
      * in PcRpt message.
      */
     @Test
-    public void reportMessageTest40() throws PcepParseException {
+    public void reportMessageTest40() throws PcepParseException, PcepOutOfBoundMessageException {
 
         byte[] reportMsg = new byte[] {0x20, 0x0a, 0x00, (byte) 0x64,
                 0x21, 0x10, 0x00, 0x0C,  0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x01, //SRP object
@@ -120,7 +121,7 @@ public class PcepReportMsgExtTest {
      * in PcRpt message.
      */
     @Test
-    public void reportMessageTest41() throws PcepParseException {
+    public void reportMessageTest41() throws PcepParseException, PcepOutOfBoundMessageException {
 
         byte[] reportMsg = new byte[] {0x20, 0x0a, 0x00, (byte) 0x8c,
                 0x21, 0x10, 0x00, 0x0C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, //SRP object
@@ -166,7 +167,7 @@ public class PcepReportMsgExtTest {
      * in PcRpt message.
      */
     @Test
-    public void reportMessageTest42() throws PcepParseException {
+    public void reportMessageTest42() throws PcepParseException, PcepOutOfBoundMessageException {
 
         byte[] reportMsg = new byte[] {0x20, 0x0a, 0x00, (byte) 0xE8,
                 0x21, 0x10, 0x00, 0x0C,  0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x01, //SRP object
@@ -183,14 +184,14 @@ public class PcepReportMsgExtTest {
                 0x20, 0x10, 0x00, 0x10, 0x00, 0x00, 0x10, 0x03, //LSP object
                 0x00, 0x11, 0x00, 0x02, 0x54, 0x31, 0x00, 0x00, //symbolic path tlv
                 0x07, 0x10, 0x00, 0x14, //ERO object
-                0x01, 0x08, (byte) 0xb6, 0x02, 0x4e, 0x1f, 0x04, 0x00,
+                0x01, 0x08, (byte) 0xb6, 0x02, 0x4e, 0x1f, 0x04, 0x00, //ERO IPv4 subobjects
                 0x01, 0x08, (byte) 0xb6, 0x02, 0x4e, 0x20, 0x04, 0x00,
                 0x09, 0x10, 0x00, 0x14, 0x00, 0x00, 0x00, 0x00, //LSPA object
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x05, 0x20, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, //Bandwidth object
                 0x06, 0x10, 0x00, 0x0c, 0x00, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00, 0x20, //Metric object
                 0x08, 0x10, 0x00, 0x34, 0x01, 0x08, 0x11, 0x01, //RRO object
-                0x01, 0x01, 0x04, 0x00, 0x01, 0x08, 0x11, 0x01,
+                0x01, 0x01, 0x04, 0x00, 0x01, 0x08, 0x11, 0x01, //RRO IPv4 subobjects
                 0x01, 0x02, 0x04, 0x00, 0x01, 0x08, 0x06, 0x06,
                 0x06, 0x06, 0x04, 0x00, 0x01, 0x08, 0x12, 0x01,
                 0x01, 0x02, 0x04, 0x00, 0x01, 0x08, 0x12, 0x01,
@@ -215,4 +216,83 @@ public class PcepReportMsgExtTest {
 
         assertThat(testReportMsg, is(reportMsg));
     }
+
+    /**
+     * Tests PCRpt msg with Path-Setup-Type TLV as SR.
+     *
+     * @throws PcepParseException
+     * @throws PcepOutOfBoundMessageException
+     */
+    @Test
+    public void reportMessageTest43() throws PcepParseException, PcepOutOfBoundMessageException {
+
+        byte[] reportMsg = new byte[] {0x20, 0x0a, 0x00, (byte) 0x3C,
+                0x21, 0x10, 0x00, 0x14,  0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x01, //SRP object
+                0x00, 0x1c, 0x00, 0x04, // PATH-SETUP-TYPE TLV
+                0x00, 0x00, 0x00, 0x01,
+                0x20, 0x10, 0x00, 0x10, 0x00, 0x00, 0x10, 0x03, //LSP object
+                0x00, 0x11, 0x00, 0x02, 0x54, 0x31, 0x00, 0x00, //symbolic path tlv
+                0x07, 0x10, 0x00, 0x14, //ERO object
+                0x01, 0x08, (byte) 0xb6, 0x02, 0x4e, 0x1f, 0x04, 0x00, //ERO IPv4 subobjects
+                0x01, 0x08, (byte) 0xb6, 0x02, 0x4e, 0x20, 0x04, 0x00,
+                };
+
+        byte[] testReportMsg = {0};
+        ChannelBuffer buffer = ChannelBuffers.dynamicBuffer();
+        buffer.writeBytes(reportMsg);
+
+        PcepMessageReader<PcepMessage> reader = PcepFactories.getGenericReader();
+        PcepMessage message = null;
+
+        message = reader.readFrom(buffer);
+        assertThat(message, instanceOf(PcepReportMsg.class));
+        ChannelBuffer buf = ChannelBuffers.dynamicBuffer();
+        message.writeTo(buf);
+
+        int readLen = buf.writerIndex();
+        testReportMsg = new byte[readLen];
+        buf.readBytes(testReportMsg, 0, readLen);
+
+        assertThat(testReportMsg, is(reportMsg));
+    }
+
+    /**
+     * Tests PCRpt msg with Path-Setup-Type TLV as "without SR and without signalling".
+     *
+     * @throws PcepParseException
+     * @throws PcepOutOfBoundMessageException
+     */
+    @Test
+    public void reportMessageTest44() throws PcepParseException, PcepOutOfBoundMessageException {
+
+        byte[] reportMsg = new byte[] {0x20, 0x0a, 0x00, (byte) 0x3C,
+                0x21, 0x10, 0x00, 0x14,  0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x01, //SRP object
+                0x00, 0x1c, 0x00, 0x04, // PATH-SETUP-TYPE TLV
+                0x00, 0x00, 0x00, 0x02,
+                0x20, 0x10, 0x00, 0x10, 0x00, 0x00, 0x10, 0x03, //LSP object
+                0x00, 0x11, 0x00, 0x02, 0x54, 0x31, 0x00, 0x00, //symbolic path tlv
+                0x07, 0x10, 0x00, 0x14, //ERO object
+                0x01, 0x08, (byte) 0xb6, 0x02, 0x4e, 0x1f, 0x04, 0x00, //ERO IPv4 subobjects
+                0x01, 0x08, (byte) 0xb6, 0x02, 0x4e, 0x20, 0x04, 0x00,
+                };
+
+        byte[] testReportMsg = {0};
+        ChannelBuffer buffer = ChannelBuffers.dynamicBuffer();
+        buffer.writeBytes(reportMsg);
+
+        PcepMessageReader<PcepMessage> reader = PcepFactories.getGenericReader();
+        PcepMessage message = null;
+
+        message = reader.readFrom(buffer);
+        assertThat(message, instanceOf(PcepReportMsg.class));
+        ChannelBuffer buf = ChannelBuffers.dynamicBuffer();
+        message.writeTo(buf);
+
+        int readLen = buf.writerIndex();
+        testReportMsg = new byte[readLen];
+        buf.readBytes(testReportMsg, 0, readLen);
+
+        assertThat(testReportMsg, is(reportMsg));
+    }
+
 }

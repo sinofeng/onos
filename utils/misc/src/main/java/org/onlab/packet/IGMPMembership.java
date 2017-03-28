@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import static org.onlab.packet.PacketUtils.checkBufferLength;
 
 public class IGMPMembership extends IGMPGroup {
 
+    // TODO should be an enum
     public static final byte MODE_IS_INCLUDE = 0x1;
     public static final byte MODE_IS_EXCLUDE = 0x2;
     public static final byte CHANGE_TO_INCLUDE_MODE = 0x3;
@@ -48,6 +49,25 @@ public class IGMPMembership extends IGMPGroup {
     public IGMPMembership() {
         super();
     }
+
+    /**
+     * Gets the IGMP record type.
+     *
+     * @return record type
+     */
+    public byte getRecordType() {
+        return recordType;
+    }
+
+    /**
+     * Sets the IGMP record type.
+     *
+     * @param type A multicast record type, like MODE_IS_INCLUDE or MODE_IS_EXCLUDE.
+     */
+    public void setRecordType(byte type) {
+        recordType = type;
+    }
+
 
     /**
      * Serialize this Membership Report.
@@ -92,9 +112,10 @@ public class IGMPMembership extends IGMPGroup {
 
         gaddr = Ip4Address.valueOf(bb.getInt());
 
-        // Make sure we have enough buffer to hold all of these sources
-        checkBufferLength(bb.remaining(), 0, Ip4Address.BYTE_LENGTH * nsrcs);
+
         for (; nsrcs > 0; nsrcs--) {
+            // Make sure we have enough buffer to hold all of these sources
+            checkBufferLength(bb.remaining(), 0, Ip4Address.BYTE_LENGTH * nsrcs);
             Ip4Address src = Ip4Address.valueOf(bb.getInt());
             this.sources.add(src);
         }

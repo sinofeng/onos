@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 
 package org.onlab.util;
+
+import org.onlab.metrics.MetricsService;
 
 import java.util.Timer;
 import java.util.concurrent.ExecutorService;
@@ -91,6 +93,17 @@ public final class SharedExecutors {
         poolThreadExecutor.setBackingExecutor(
                 newFixedThreadPool(poolSize, groupedThreads("onos/shared",
                                                             "onos-pool-executor-%d")));
+    }
+
+    /**
+     * Enables or disables calculation of the pool performance metrics. If
+     * the metrics service is not null metric collection will be enabled;
+     * otherwise it will be disabled.
+     *
+     * @param metricsService optional metric service
+     */
+    public static void setMetricsService(MetricsService metricsService) {
+        poolThreadExecutor.setMetricsService(metricsService);
     }
 
     /**

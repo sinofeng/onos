@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,22 +42,22 @@
 
     // key to button mapping data
     var k2b = {
-        O: { id: 'summary-tog', gid: 'summary', isel: true},
-        I: { id: 'instance-tog', gid: 'uiAttached', isel: true },
-        D: { id: 'details-tog', gid: 'details', isel: true },
-        H: { id: 'hosts-tog', gid: 'endstation', isel: false },
-        M: { id: 'offline-tog', gid: 'switch', isel: true },
-        P: { id: 'ports-tog', gid: 'ports', isel: true },
-        B: { id: 'bkgrnd-tog', gid: 'map', isel: false },
-        S: { id: 'sprite-tog', gid: 'cloud', isel: false },
+        O: { id: 'summary-tog', gid: 'm_summary', isel: true},
+        I: { id: 'instance-tog', gid: 'm_uiAttached', isel: true },
+        D: { id: 'details-tog', gid: 'm_details', isel: true },
+        H: { id: 'hosts-tog', gid: 'm_endstation', isel: false },
+        M: { id: 'offline-tog', gid: 'm_switch', isel: true },
+        P: { id: 'ports-tog', gid: 'm_ports', isel: true },
+        B: { id: 'bkgrnd-tog', gid: 'm_map', isel: false },
+        G: { id: 'bkgrnd-sel', gid: 'm_selectMap' },
+        S: { id: 'sprite-tog', gid: 'm_cloud', isel: false },
 
-        //X: { id: 'nodelock-tog', gid: 'lock', isel: false },
-        Z: { id: 'oblique-tog', gid: 'oblique', isel: false },
-        N: { id: 'filters-btn', gid: 'filters' },
-        L: { id: 'cycleLabels-btn', gid: 'cycleLabels' },
-        R: { id: 'resetZoom-btn', gid: 'resetZoom' },
+        Z: { id: 'oblique-tog', gid: 'm_oblique', isel: false },
+        N: { id: 'filters-btn', gid: 'm_filters' },
+        L: { id: 'cycleLabels-btn', gid: 'm_cycleLabels' },
+        R: { id: 'resetZoom-btn', gid: 'm_resetZoom' },
 
-        E: { id: 'eqMaster-btn', gid: 'eqMaster' }
+        E: { id: 'eqMaster-btn', gid: 'm_eqMaster' }
     };
 
     var prohibited = [
@@ -69,14 +69,16 @@
 
     // initial toggle state: default settings and tag to key mapping
     var defaultPrefsState = {
-            summary: 1,
             insts: 1,
+            summary: 1,
             detail: 1,
             hosts: 0,
             offdev: 1,
+            dlbls: 0,
             porthl: 1,
             bg: 0,
             spr: 0,
+            ovid: 'traffic',   // default to traffic overlay
             toolbar: 0
         },
         prefsMap = {
@@ -93,7 +95,6 @@
 
     function init(_api_) {
         api = _api_;
-
         // retrieve initial toggle button settings from user prefs
         setInitToggleState();
     }
@@ -103,7 +104,9 @@
     }
 
     function setInitToggleState() {
-        cachedState = ps.asNumbers(ps.getPrefs(cooktag));
+        cachedState = ps.asNumbers(
+            ps.getPrefs(cooktag, defaultPrefsState), ['ovid'], true
+        );
         $log.debug('TOOLBAR---- read prefs state:', cachedState);
 
         if (!cachedState) {
@@ -149,6 +152,7 @@
         addToggle('M');
         addToggle('P', true);
         addToggle('B');
+        addButton('G');
         addToggle('S', true);
     }
 
@@ -167,7 +171,7 @@
 
         // generate radio button set for overlays; start with 'none'
         var rset = [{
-                gid: 'unknown',
+                gid: 'm_unknown',
                 tooltip: 'No Overlay',
                 cb: function () {
                     tov.tbSelection(null, switchOverlayActions);
@@ -195,6 +199,9 @@
         // ensure dialog has closed (if opened by outgoing overlay)
         tds.closeDialog();
         thirdRow.clear();
+
+        // persist our choice of overlay...
+        persistTopoPrefs('ovid', oid);
 
         if (!order.length) {
             thirdRow.setText(selOver);
@@ -261,13 +268,31 @@
         }
     }
 
-    function toggleToolbar() {
-        toolbar.toggle();
+    function persistTopoPrefs(key, val) {
+        var prefs = ps.getPrefs(cooktag, defaultPrefsState);
+        prefs[key] = val === undefined ? !prefs[key] : val;
+        ps.setPrefs('topo_prefs', prefs);
     }
 
-    function setDefaultOverlay() {
-        var idx = ovIndex[defaultOverlay] || 0;
+    function toggleToolbar() {
+        toolbar.toggle();
+        persistTopoPrefs('toolbar');
+    }
+    
+    function selectOverlay(ovid) {
+        var idx = ovIndex[defaultOverlay] || 0,
+            pidx = (ovid === null) ? 0 : ovIndex[ovid] || -1;
+        if (pidx >= 0 && pidx < ovRset.size()) {
+            idx = pidx;
+        }
         ovRset.selectedIndex(idx);
+    }
+
+    // an overlay was selected via Function-Key press
+    function fnkey(idx) {
+        if (idx < ovRset.size() && idx !== ovRset.selectedIndex()) {
+            ovRset.selectedIndex(idx);
+        }
     }
 
     angular.module('ovTopo')
@@ -289,7 +314,9 @@
                 destroyToolbar: destroyToolbar,
                 keyListener: keyListener,
                 toggleToolbar: toggleToolbar,
-                setDefaultOverlay: setDefaultOverlay
+                selectOverlay: selectOverlay,
+                defaultPrefs: defaultPrefsState,
+                fnkey: fnkey
             };
         }]);
 }());

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,7 +39,8 @@ public final class HostCodec extends AnnotatedCodec<Host> {
         final ObjectNode result = context.mapper().createObjectNode()
                 .put("id", host.id().toString())
                 .put("mac", host.mac().toString())
-                .put("vlan", host.vlan().toString());
+                .put("vlan", host.vlan().toString())
+                .put("configured", host.configured());
 
         final ArrayNode jsonIpAddresses = result.putArray("ipAddresses");
         for (final IpAddress ipAddress : host.ipAddresses()) {

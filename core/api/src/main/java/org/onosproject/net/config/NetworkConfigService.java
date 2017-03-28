@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -135,6 +135,28 @@ public interface NetworkConfigService
                                            JsonNode json);
 
     /**
+     * Applies configuration for the specified subject and configuration
+     * key using the raw JSON object. If configuration already exists, it
+     * will be updated. If the specified configuration key does not yet have
+     * a registered class associated with it, the configuration will be pending
+     * and null value will be returned. Once the backing configuration class is
+     * registered, the configuration will be validated and accepted.
+     *
+     * @param subjectClassKey subject class key
+     * @param subject         configuration subject
+     * @param configKey       configuration class key
+     * @param json            raw JSON node containing the configuration data
+     * @param <S>             type of subject
+     * @param <C>             type of configuration
+     * @return configuration object or null if configuration key does not have
+     *                                  a registered class yet
+     * @throws IllegalArgumentException if the supplied JSON node contains
+     *                                  invalid data
+     */
+    <S, C extends Config<S>> C applyConfig(String subjectClassKey, S subject,
+                                           String configKey, JsonNode json);
+
+    /**
      * Clears any configuration for the specified subject and configuration
      * class. If one does not exist, this call has no effect.
      *
@@ -145,4 +167,31 @@ public interface NetworkConfigService
      */
     <S, C extends Config<S>> void removeConfig(S subject, Class<C> configClass);
 
+    /**
+     * Clears any configuration for the specified subject and configuration
+     * key. If one does not exist, this call has no effect.
+     *
+     * @param subjectClassKey   subject class key
+     * @param subject           configuration subject
+     * @param configKey         configuration key
+     * @param <S>               type of subject
+     */
+    <S> void removeConfig(String subjectClassKey, S subject, String configKey);
+
+    /**
+     * Clears the  configuration including queued based on the subject.
+     * If does not exists this call has no effect.
+     *
+     * @param <S>               type of subject
+     * @param subject           configuration subject
+     */
+    <S> void removeConfig(S subject);
+
+    /**
+     * Clears the complete configuration including queued.
+     * If does not exists this call has no effect.
+     *
+     * @param <S>               type of subject
+     */
+    <S> void removeConfig();
 }

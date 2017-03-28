@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,6 +55,8 @@ import org.onosproject.net.intent.IntentEvent;
 import org.onosproject.net.intent.IntentListener;
 import org.onosproject.net.intent.Key;
 import org.onosproject.net.intent.MultiPointToSinglePointIntent;
+import org.onosproject.net.intent.IntentService;
+import org.onosproject.net.intent.IntentState;
 import org.onosproject.net.link.LinkEvent;
 import org.onosproject.net.link.LinkListener;
 import org.onosproject.ui.JsonUtils;
@@ -67,10 +69,10 @@ import org.onosproject.ui.topo.PropertyPanel;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -87,6 +89,7 @@ import static org.onosproject.net.device.DeviceEvent.Type.PORT_STATS_UPDATED;
 import static org.onosproject.net.host.HostEvent.Type.HOST_ADDED;
 import static org.onosproject.net.link.LinkEvent.Type.LINK_ADDED;
 import static org.onosproject.ui.JsonUtils.envelope;
+import static org.onosproject.ui.JsonUtils.string;
 import static org.onosproject.ui.topo.TopoJson.highlightsMessage;
 import static org.onosproject.ui.topo.TopoJson.json;
 
@@ -99,6 +102,9 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
     private static final String REQ_DETAILS = "requestDetails";
     private static final String UPDATE_META = "updateMeta";
     private static final String ADD_HOST_INTENT = "addHostIntent";
+    private static final String REMOVE_INTENT = "removeIntent";
+    private static final String REMOVE_INTENTS = "removeIntents";
+    private static final String RESUBMIT_INTENT = "resubmitIntent";
     private static final String ADD_MULTI_SRC_INTENT = "addMultiSourceIntent";
     private static final String REQ_RELATED_INTENTS = "requestRelatedIntents";
     private static final String REQ_NEXT_INTENT = "requestNextRelatedIntent";
@@ -115,9 +121,12 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
     private static final String SPRITE_LIST_REQ = "spriteListRequest";
     private static final String SPRITE_DATA_REQ = "spriteDataRequest";
     private static final String TOPO_START = "topoStart";
-    private static final String TOPO_HEARTBEAT = "topoHeartbeat";
     private static final String TOPO_SELECT_OVERLAY = "topoSelectOverlay";
     private static final String TOPO_STOP = "topoStop";
+
+    //Protected Intents events
+    private static final String SEL_PROTECTED_INTENT = "selectProtectedIntent";
+    private static final String CANCEL_PROTECTED_INTENT_HIGHLIGHT = "cancelProtectedIntentHighlight";
 
     // outgoing event types
     private static final String SHOW_SUMMARY = "showSummary";
@@ -128,6 +137,8 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
     private static final String TOPO_START_DONE = "topoStartDone";
 
     // fields
+    private static final String PAYLOAD = "payload";
+    private static final String EXTRA = "extra";
     private static final String ID = "id";
     private static final String KEY = "key";
     private static final String APP_ID = "appId";
@@ -145,6 +156,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
     private static final String NAMES = "names";
     private static final String ACTIVATE = "activate";
     private static final String DEACTIVATE = "deactivate";
+    private static final String PURGE = "purge";
 
 
     private static final String MY_APP_ID = "org.onosproject.gui";
@@ -153,7 +165,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
     private static final long SUMMARY_PERIOD = 30000;
 
     private static final Comparator<? super ControllerNode> NODE_COMPARATOR =
-            (o1, o2) -> o1.id().toString().compareTo(o2.id().toString());
+            Comparator.comparing(o -> o.id().toString());
 
 
     private final Timer timer = new Timer("onos-topology-view");
@@ -174,15 +186,16 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
 
     private final Accumulator<Event> eventAccummulator = new InternalEventAccummulator();
     private final ExecutorService msgSender =
-            newSingleThreadExecutor(groupedThreads("onos/gui", "msg-sender"));
+            newSingleThreadExecutor(groupedThreads("onos/gui", "msg-sender", log));
 
     private TopoOverlayCache overlayCache;
     private TrafficMonitor traffic;
+    private ProtectedIntentMonitor protectedIntentMonitor;
 
     private TimerTask summaryTask = null;
     private boolean summaryRunning = false;
 
-    private boolean listenersRemoved = false;
+    private volatile boolean listenersRemoved = false;
 
 
     @Override
@@ -190,6 +203,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         super.init(connection, directory);
         appId = directory.get(CoreService.class).registerApplication(MY_APP_ID);
         traffic = new TrafficMonitor(TRAFFIC_PERIOD, servicesBundle, this);
+        protectedIntentMonitor = new ProtectedIntentMonitor(TRAFFIC_PERIOD, servicesBundle, this);
     }
 
     @Override
@@ -203,7 +217,6 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
     protected Collection<RequestHandler> createRequestHandlers() {
         return ImmutableSet.of(
                 new TopoStart(),
-                new TopoHeartbeat(),
                 new TopoSelectOverlay(),
                 new TopoStop(),
                 new ReqSummary(),
@@ -217,6 +230,9 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
                 // TODO: migrate traffic related to separate app
                 new AddHostIntent(),
                 new AddMultiSourceIntent(),
+                new RemoveIntent(),
+                new ResubmitIntent(),
+                new RemoveIntents(),
 
                 new ReqAllFlowTraffic(),
                 new ReqAllPortTraffic(),
@@ -226,8 +242,10 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
                 new ReqPrevIntent(),
                 new ReqSelectedIntentTraffic(),
                 new SelIntent(),
+                new SelProtectedIntent(),
 
-                new CancelTraffic()
+                new CancelTraffic(),
+                new CancelProtectedIntentHighlight()
         );
     }
 
@@ -248,7 +266,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             addListeners();
             sendAllInstances(null);
             sendAllDevices();
@@ -258,24 +276,13 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
     }
 
-    private final class TopoHeartbeat extends RequestHandler {
-        private TopoHeartbeat() {
-            super(TOPO_HEARTBEAT);
-        }
-
-        @Override
-        public void process(long sid, ObjectNode payload) {
-            // place holder for now
-        }
-    }
-
     private final class TopoSelectOverlay extends RequestHandler {
         private TopoSelectOverlay() {
             super(TOPO_SELECT_OVERLAY);
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             String deact = string(payload, DEACTIVATE);
             String act = string(payload, ACTIVATE);
             overlayCache.switchOverlay(deact, act);
@@ -288,7 +295,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             removeListeners();
             stopSummaryMonitoring();
             traffic.stopMonitoring();
@@ -301,8 +308,8 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
-            requestSummary(sid);
+        public void process(ObjectNode payload) {
+            requestSummary();
             startSummaryMonitoring();
         }
     }
@@ -313,7 +320,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             stopSummaryMonitoring();
         }
     }
@@ -324,12 +331,12 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             ObjectNode root = objectNode();
             ArrayNode names = arrayNode();
             get(SpriteService.class).getNames().forEach(names::add);
             root.set(NAMES, names);
-            sendMessage(SPRITE_LIST_RESPONSE, sid, root);
+            sendMessage(SPRITE_LIST_RESPONSE, root);
         }
     }
 
@@ -339,11 +346,11 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             String name = string(payload, NAME);
             ObjectNode root = objectNode();
             root.set(DATA, get(SpriteService.class).get(name));
-            sendMessage(SPRITE_DATA_RESPONSE, sid, root);
+            sendMessage(SPRITE_DATA_RESPONSE, root);
         }
     }
 
@@ -353,22 +360,22 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             String type = string(payload, CLASS, UNKNOWN);
             String id = string(payload, ID);
             PropertyPanel pp = null;
 
             if (type.equals(DEVICE)) {
                 DeviceId did = deviceId(id);
-                pp = deviceDetails(did, sid);
+                pp = deviceDetails(did);
                 overlayCache.currentOverlay().modifyDeviceDetails(pp, did);
             } else if (type.equals(HOST)) {
                 HostId hid = hostId(id);
-                pp = hostDetails(hid, sid);
+                pp = hostDetails(hid);
                 overlayCache.currentOverlay().modifyHostDetails(pp, hid);
             }
 
-            sendMessage(envelope(SHOW_DETAILS, sid, json(pp)));
+            sendMessage(envelope(SHOW_DETAILS, json(pp)));
         }
     }
 
@@ -378,7 +385,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             updateMetaUi(payload);
         }
     }
@@ -389,7 +396,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             directory.get(MastershipAdminService.class).balanceRoles();
         }
     }
@@ -405,7 +412,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             // TODO: add protection against device ids and non-existent hosts.
             HostId one = hostId(string(payload, ONE));
             HostId two = hostId(string(payload, TWO));
@@ -423,13 +430,88 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
     }
 
+    private Intent findIntentByPayload(ObjectNode payload) {
+        Intent intent;
+        Key key;
+        int appId = Integer.parseInt(string(payload, APP_ID));
+        String appName = string(payload, APP_NAME);
+        ApplicationId applicId = new DefaultApplicationId(appId, appName);
+        String stringKey = string(payload, KEY);
+        try {
+            // FIXME: If apps use different string key, but they contains
+            // same numeric value (e.g. "020", "0x10", "16", "#10")
+            // and one intent using long key (e.g. 16L)
+            // this function might return wrong intent.
+
+            long longKey = Long.decode(stringKey);
+            key = Key.of(longKey, applicId);
+            intent = intentService.getIntent(key);
+
+            if (intent == null) {
+                // Intent might using string key, not long key
+                key = Key.of(stringKey, applicId);
+                intent = intentService.getIntent(key);
+            }
+        } catch (NumberFormatException ex) {
+            // string key
+            key = Key.of(stringKey, applicId);
+            intent = intentService.getIntent(key);
+        }
+
+        log.debug("Attempting to select intent by key={}", key);
+
+        return intent;
+    }
+
+    private final class RemoveIntent extends RequestHandler {
+        private RemoveIntent() {
+            super(REMOVE_INTENT);
+        }
+
+        private boolean isIntentToBePurged(ObjectNode payload) {
+            return bool(payload, PURGE);
+        }
+
+        @Override
+        public void process(ObjectNode payload) {
+            Intent intent = findIntentByPayload(payload);
+            if (intent == null) {
+                log.warn("Unable to find intent from payload {}", payload);
+            } else {
+                log.debug("Withdrawing / Purging intent {}", intent.key());
+                if (isIntentToBePurged(payload)) {
+                    intentService.purge(intent);
+                } else {
+                    intentService.withdraw(intent);
+                }
+            }
+        }
+    }
+
+    private final class ResubmitIntent extends RequestHandler {
+        private ResubmitIntent() {
+            super(RESUBMIT_INTENT);
+        }
+
+        @Override
+        public void process(ObjectNode payload) {
+            Intent intent = findIntentByPayload(payload);
+            if (intent == null) {
+                log.warn("Unable to find intent from payload {}", payload);
+            } else {
+                log.debug("Resubmitting intent {}", intent.key());
+                intentService.submit(intent);
+            }
+        }
+    }
+
     private final class AddMultiSourceIntent extends RequestHandler {
         private AddMultiSourceIntent() {
             super(ADD_MULTI_SRC_INTENT);
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             // TODO: add protection against device ids and non-existent hosts.
             Set<HostId> src = getHostIds((ArrayNode) payload.path(SRC));
             HostId dst = hostId(string(payload, DST));
@@ -458,6 +540,24 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
     }
 
+    private final class RemoveIntents extends RequestHandler {
+        private RemoveIntents() {
+            super(REMOVE_INTENTS);
+        }
+
+
+        @Override
+        public void process(ObjectNode payload) {
+            IntentService intentService = get(IntentService.class);
+            for (Intent intent : intentService.getIntents()) {
+                if (intentService.getIntentState(intent.key()) == IntentState.WITHDRAWN) {
+                    intentService.purge(intent);
+                }
+            }
+
+        }
+    }
+
     // ========= -----------------------------------------------------------------
 
     private final class ReqAllFlowTraffic extends RequestHandler {
@@ -466,7 +566,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             traffic.monitor(Mode.ALL_FLOW_TRAFFIC);
         }
     }
@@ -477,7 +577,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             traffic.monitor(Mode.ALL_PORT_TRAFFIC);
         }
     }
@@ -488,9 +588,9 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             NodeSelection nodeSelection =
-                    new NodeSelection(payload, deviceService, hostService);
+                    new NodeSelection(payload, deviceService, hostService, linkService);
             traffic.monitor(Mode.DEV_LINK_FLOWS, nodeSelection);
         }
     }
@@ -501,9 +601,9 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             NodeSelection nodeSelection =
-                    new NodeSelection(payload, deviceService, hostService);
+                    new NodeSelection(payload, deviceService, hostService, linkService);
             traffic.monitor(Mode.RELATED_INTENTS, nodeSelection);
         }
     }
@@ -514,7 +614,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             traffic.selectNextIntent();
         }
     }
@@ -525,7 +625,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             traffic.selectPreviousIntent();
         }
     }
@@ -536,7 +636,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             traffic.monitor(Mode.SELECTED_INTENT);
         }
     }
@@ -547,21 +647,30 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
-            int appId = Integer.parseInt(string(payload, APP_ID));
-            String appName = string(payload, APP_NAME);
-            ApplicationId applicId = new DefaultApplicationId(appId, appName);
-            long intentKey = Long.decode(string(payload, KEY));
-
-            Key key = Key.of(intentKey, applicId);
-            log.debug("Attempting to select intent key={}", key);
-
-            Intent intent = intentService.getIntent(key);
+        public void process(ObjectNode payload) {
+            Intent intent = findIntentByPayload(payload);
             if (intent == null) {
-                log.debug("no such intent found!");
+                log.warn("Unable to find intent from payload {}", payload);
             } else {
-                log.debug("starting to monitor intent {}", key);
+                log.debug("starting to monitor intent {}", intent.key());
                 traffic.monitor(intent);
+            }
+        }
+    }
+
+    private final class SelProtectedIntent extends RequestHandler {
+        private SelProtectedIntent() {
+            super(SEL_PROTECTED_INTENT);
+        }
+
+        @Override
+        public void process(ObjectNode payload) {
+            Intent intent = findIntentByPayload(payload);
+            if (intent == null) {
+                log.warn("Unable to find protected intent from payload {}", payload);
+            } else {
+                log.debug("starting to monitor protected intent {}", intent.key());
+                protectedIntentMonitor.monitor(intent);
             }
         }
     }
@@ -572,23 +681,34 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         }
 
         @Override
-        public void process(long sid, ObjectNode payload) {
+        public void process(ObjectNode payload) {
             traffic.stopMonitoring();
+        }
+    }
+
+    private final class CancelProtectedIntentHighlight extends RequestHandler {
+        private CancelProtectedIntentHighlight() {
+            super(CANCEL_PROTECTED_INTENT_HIGHLIGHT);
+        }
+
+        @Override
+        public void process(ObjectNode payload) {
+            protectedIntentMonitor.stopMonitoring();
         }
     }
 
     //=======================================================================
 
     // Converts highlights to JSON format and sends the message to the client
-    protected void sendHighlights(Highlights highlights) {
+    void sendHighlights(Highlights highlights) {
         sendMessage(highlightsMessage(highlights));
     }
 
     // Subscribes for summary messages.
-    private synchronized void requestSummary(long sid) {
-        PropertyPanel pp = summmaryMessage(sid);
+    private synchronized void requestSummary() {
+        PropertyPanel pp = summmaryMessage();
         overlayCache.currentOverlay().modifySummary(pp);
-        sendMessage(envelope(SHOW_SUMMARY, sid, json(pp)));
+        sendMessage(envelope(SHOW_SUMMARY, json(pp)));
     }
 
 
@@ -600,7 +720,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
     // Sends all controller nodes to the client as node-added messages.
     private void sendAllInstances(String messageType) {
         List<ControllerNode> nodes = new ArrayList<>(clusterService.getNodes());
-        Collections.sort(nodes, NODE_COMPARATOR);
+        nodes.sort(NODE_COMPARATOR);
         for (ControllerNode node : nodes) {
             sendMessage(instanceMessage(new ClusterEvent(INSTANCE_ADDED, node),
                                         messageType));
@@ -611,12 +731,14 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
     private void sendAllDevices() {
         // Send optical first, others later for layered rendering
         for (Device device : deviceService.getDevices()) {
-            if (device.type() == Device.Type.ROADM) {
+            if ((device.type() == Device.Type.ROADM) ||
+                    (device.type() == Device.Type.OTN)) {
                 sendMessage(deviceMessage(new DeviceEvent(DEVICE_ADDED, device)));
             }
         }
         for (Device device : deviceService.getDevices()) {
-            if (device.type() != Device.Type.ROADM) {
+            if ((device.type() != Device.Type.ROADM) &&
+                    (device.type() != Device.Type.OTN)) {
                 sendMessage(deviceMessage(new DeviceEvent(DEVICE_ADDED, device)));
             }
         }
@@ -627,14 +749,38 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         // Send optical first, others later for layered rendering
         for (Link link : linkService.getLinks()) {
             if (link.type() == Link.Type.OPTICAL) {
-                sendMessage(linkMessage(new LinkEvent(LINK_ADDED, link)));
+                sendMessage(composeLinkMessage(new LinkEvent(LINK_ADDED, link)));
             }
         }
         for (Link link : linkService.getLinks()) {
             if (link.type() != Link.Type.OPTICAL) {
-                sendMessage(linkMessage(new LinkEvent(LINK_ADDED, link)));
+                sendMessage(composeLinkMessage(new LinkEvent(LINK_ADDED, link)));
             }
         }
+    }
+
+    // Temporary mechanism to support topology overlays adding their own
+    // properties to the link events.
+    private ObjectNode composeLinkMessage(LinkEvent event) {
+        // start with base message
+        ObjectNode msg = linkMessage(event);
+        Map<String, String> additional =
+                overlayCache.currentOverlay().additionalLinkData(event);
+
+        if (additional != null) {
+            // attach additional key-value pairs as extra data structure
+            ObjectNode payload = (ObjectNode) msg.get(PAYLOAD);
+            payload.set(EXTRA, createExtra(additional));
+        }
+        return msg;
+    }
+
+    private ObjectNode createExtra(Map<String, String> additional) {
+        ObjectNode extra = objectNode();
+        for (Map.Entry<String, String> entry : additional.entrySet()) {
+            extra.put(entry.getKey(), entry.getValue());
+        }
+        return extra;
     }
 
     // Sends all hosts to the client as host-added messages.
@@ -712,6 +858,8 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
     }
 
     // Cluster event listener.
+    // TODO: Superceded by UiSharedTopologyModel.ModelEventListener
+    @Deprecated
     private class InternalClusterListener implements ClusterEventListener {
         @Override
         public void event(ClusterEvent event) {
@@ -720,6 +868,8 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
     }
 
     // Mastership change listener
+    // TODO: Superceded by UiSharedTopologyModel.ModelEventListener
+    @Deprecated
     private class InternalMastershipListener implements MastershipListener {
         @Override
         public void event(MastershipEvent event) {
@@ -734,35 +884,46 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
     }
 
     // Device event listener.
+    // TODO: Superceded by UiSharedTopologyModel.ModelEventListener
+    @Deprecated
     private class InternalDeviceListener implements DeviceListener {
         @Override
         public void event(DeviceEvent event) {
             if (event.type() != PORT_STATS_UPDATED) {
                 msgSender.execute(() -> sendMessage(deviceMessage(event)));
+                msgSender.execute(traffic::pokeIntent);
                 eventAccummulator.add(event);
             }
         }
     }
 
     // Link event listener.
+    // TODO: Superceded by UiSharedTopologyModel.ModelEventListener
+    @Deprecated
     private class InternalLinkListener implements LinkListener {
         @Override
         public void event(LinkEvent event) {
-            msgSender.execute(() -> sendMessage(linkMessage(event)));
+            msgSender.execute(() -> sendMessage(composeLinkMessage(event)));
+            msgSender.execute(traffic::pokeIntent);
             eventAccummulator.add(event);
         }
     }
 
     // Host event listener.
+    // TODO: Superceded by UiSharedTopologyModel.ModelEventListener
+    @Deprecated
     private class InternalHostListener implements HostListener {
         @Override
         public void event(HostEvent event) {
             msgSender.execute(() -> sendMessage(hostMessage(event)));
+            msgSender.execute(traffic::pokeIntent);
             eventAccummulator.add(event);
         }
     }
 
     // Intent event listener.
+    // TODO: Superceded by UiSharedTopologyModel.ModelEventListener
+    @Deprecated
     private class InternalIntentListener implements IntentListener {
         @Override
         public void event(IntentEvent event) {
@@ -772,6 +933,8 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
     }
 
     // Intent event listener.
+    // TODO: Superceded by UiSharedTopologyModel.ModelEventListener
+    @Deprecated
     private class InternalFlowListener implements FlowRuleListener {
         @Override
         public void event(FlowRuleEvent event) {
@@ -788,7 +951,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
         public void run() {
             try {
                 if (summaryRunning) {
-                    msgSender.execute(() -> requestSummary(0));
+                    msgSender.execute(() -> requestSummary());
                 }
             } catch (Exception e) {
                 log.warn("Unable to handle summary request due to {}", e.getMessage());
@@ -815,7 +978,7 @@ public class TopologyViewMessageHandler extends TopologyViewMessageHandlerBase {
 
             try {
                 if (summaryRunning) {
-                    msgSender.execute(() -> requestSummary(0));
+                    msgSender.execute(() -> requestSummary());
                 }
             } catch (Exception e) {
                 log.warn("Unable to handle summary request due to {}", e.getMessage());

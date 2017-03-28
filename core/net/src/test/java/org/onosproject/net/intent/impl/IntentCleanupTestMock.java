@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.onosproject.net.intent.impl;
 import com.google.common.collect.Sets;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.onosproject.cfg.ComponentConfigAdapter;
 import org.onosproject.core.IdGenerator;
@@ -72,6 +73,7 @@ public class IntentCleanupTestMock {
         assertTrue("store should be empty",
                    Sets.newHashSet(cleanup.store.getIntents()).isEmpty());
 
+        Intent.unbindIdGenerator(idGenerator);
         Intent.bindIdGenerator(idGenerator);
     }
 
@@ -115,7 +117,9 @@ public class IntentCleanupTestMock {
         expectLastCall().once();
         replay(service);
 
-        cleanup.run(); //FIXME broken?
+        synchronized (service) {
+            cleanup.run();
+        }
         verify(service);
         reset(service);
     }
@@ -141,7 +145,7 @@ public class IntentCleanupTestMock {
         IntentData data = new IntentData(intent, INSTALL_REQ, version);
         store.addPending(data);
 
-        service.submit(intent);
+        service.addPending(data);
         expectLastCall().once();
         replay(service);
 
@@ -154,6 +158,7 @@ public class IntentCleanupTestMock {
      * Trigger resubmit of intent in INSTALLING for too long.
      */
     @Test
+    @Ignore("The implementation is dependent on the SimpleStore")
     public void installingPoll() {
         IntentStoreDelegate mockDelegate = new IntentStoreDelegate() {
             @Override
@@ -174,7 +179,7 @@ public class IntentCleanupTestMock {
         IntentData data = new IntentData(intent, INSTALL_REQ, version);
         store.addPending(data);
 
-        service.submit(intent);
+        service.addPending(data);
         expectLastCall().once();
         replay(service);
 

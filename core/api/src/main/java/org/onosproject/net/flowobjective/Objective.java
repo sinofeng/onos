@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,8 @@ public interface Objective {
     boolean DEFAULT_PERMANENT = true;
     int DEFAULT_TIMEOUT = 0;
     int DEFAULT_PRIORITY = 32768;
+    int MIN_PRIORITY = 0;
+    int MAX_PRIORITY = 65535;
 
     /**
      * Type of operation.
@@ -112,6 +114,13 @@ public interface Objective {
     Optional<ObjectiveContext> context();
 
     /**
+     * Returns a new builder set to create a copy of this objective.
+     *
+     * @return new builder
+     */
+    Objective.Builder copy();
+
+    /**
      * An objective builder.
      */
     interface Builder {
@@ -146,6 +155,36 @@ public interface Objective {
          */
         Builder withPriority(int priority);
 
-    }
+        /**
+         * Builds the objective that will be added.
+         *
+         * @return an objective
+         */
+        Objective add();
 
+        /**
+         * Builds the objective that will be removed.
+         *
+         * @return an objective.
+         */
+        Objective remove();
+
+        /**
+         * Builds the objective that will be added.
+         * The context will be used to notify the calling application.
+         *
+         * @param context an objective context
+         * @return an objective
+         */
+        Objective add(ObjectiveContext context);
+
+        /**
+         * Builds the objective that will be removed.
+         * The context will be used to notify the calling application.
+         *
+         * @param context an objective context
+         * @return an objective
+         */
+        Objective remove(ObjectiveContext context);
+    }
 }

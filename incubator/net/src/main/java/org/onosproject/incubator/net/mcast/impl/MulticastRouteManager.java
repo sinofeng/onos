@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,7 +55,6 @@ public class MulticastRouteManager
 
     @Activate
     public void activate() {
-
         eventDispatcher.addSink(McastEvent.class, listenerRegistry);
         store.setDelegate(delegate);
 
@@ -64,6 +63,7 @@ public class MulticastRouteManager
 
     @Deactivate
     public void deactivate() {
+        eventDispatcher.removeSink(McastEvent.class);
         log.info("Stopped");
     }
 
@@ -80,6 +80,11 @@ public class MulticastRouteManager
     }
 
     @Override
+    public Set<McastRoute> getRoutes() {
+        return store.getRoutes();
+    }
+
+    @Override
     public void addSource(McastRoute route, ConnectPoint connectPoint) {
         checkNotNull(route, "Route cannot be null");
         checkNotNull(connectPoint, "Source cannot be null");
@@ -93,7 +98,6 @@ public class MulticastRouteManager
         store.storeSink(route, connectPoint, McastStore.Type.ADD);
 
     }
-
 
     @Override
     public void removeSink(McastRoute route, ConnectPoint connectPoint) {

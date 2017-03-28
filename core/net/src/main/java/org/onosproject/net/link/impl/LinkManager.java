@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Open Networking Laboratory
+ * Copyright 2014-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,6 +52,7 @@ import org.onosproject.net.link.LinkStoreDelegate;
 import org.onosproject.net.provider.AbstractProviderService;
 import org.slf4j.Logger;
 
+import java.util.Optional;
 import java.util.Set;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -260,7 +261,7 @@ public class LinkManager
             if (isAllowed(cfg) && isAllowed(cfgTwo)) {
                 return BasicLinkOperator.combine(cfg, linkDescription);
             } else {
-                log.trace("Link " + linkDescription.toString() + " is not allowed");
+                log.trace("Link {} is not allowed", linkDescription);
                 return null;
             }
         }
@@ -337,28 +338,36 @@ public class LinkManager
             LinkKey lk = (LinkKey) event.subject();
             BasicLinkConfig cfg = networkConfigService.getConfig(lk, BasicLinkConfig.class);
 
+            log.debug("Detected link network config event {}", event.type());
+
             if (!isAllowed(cfg)) {
                 log.info("Kicking out links between {} and {}", lk.src(), lk.dst());
                 removeLink(lk.src(), lk.dst());
                 removeLink(lk.dst(), lk.src());
                 return;
             }
-            Link link = getLink(lk.src(), lk.dst());
-            LinkDescription fldesc;
-            LinkDescription rldesc;
-            if (link == null) {
-                fldesc = BasicLinkOperator.descriptionOf(lk.src(), lk.dst(), cfg);
-                rldesc = BasicLinkOperator.descriptionOf(lk.dst(), lk.src(), cfg);
-            } else {
-                fldesc = BasicLinkOperator.combine(cfg,
-                            BasicLinkOperator.descriptionOf(lk.src(), lk.dst(), link));
-                rldesc = BasicLinkOperator.combine(cfg,
-                            BasicLinkOperator.descriptionOf(lk.dst(), lk.src(), link));
+
+            doUpdate(lk.src(), lk.dst(), cfg);
+            if (cfg.isBidirectional()) {
+                doUpdate(lk.dst(), lk.src(), cfg);
             }
-            // XXX think of sane way to fetch the LinkProvider
-            store.createOrUpdateLink(ProviderId.NONE, fldesc);
-            store.createOrUpdateLink(ProviderId.NONE, rldesc);
         }
 
+        private void doUpdate(ConnectPoint src, ConnectPoint dst, BasicLinkConfig cfg) {
+            Link link = getLink(src, dst);
+            LinkDescription desc;
+
+            if (link == null) {
+                desc = BasicLinkOperator.descriptionOf(src, dst, cfg);
+            } else {
+                desc = BasicLinkOperator.combine(cfg,
+                        BasicLinkOperator.descriptionOf(src, dst, link));
+            }
+
+            ProviderId pid = Optional.ofNullable(link)
+                    .map(Link::providerId)
+                    .orElse(ProviderId.NONE);
+            store.createOrUpdateLink(pid, desc);
+        }
     }
 }

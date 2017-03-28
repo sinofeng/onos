@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.onlab.osgi.ServiceDirectory;
+import org.onosproject.codec.CodecContext;
+import org.onosproject.codec.CodecService;
+import org.onosproject.codec.JsonCodec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,7 +42,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * </p>
  * <pre>
  * {
- *     "type": "<em>event-type</em>",
+ *     "event": "<em>event-type</em>",
  *     "payload": {
  *         <em>arbitrary JSON object structure</em>
  *     }
@@ -51,16 +54,23 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * the <em>event-type</em> is determined, and the message dispatched to the
  * corresponding <em>RequestHandler</em>'s
  * {@link RequestHandler#process process} method.
+ * <p>
+ * For convenience the implementation includes methods to obtain JSON
+ * generating objects (mapper, objectNode, arrayNode) as well as a
+ * JsonCodecContext for preparing and digesting messages to the UI
+ * client.
  */
 public abstract class UiMessageHandler {
 
     private final Logger log = LoggerFactory.getLogger(getClass());
     private final Map<String, RequestHandler> handlerMap = new HashMap<>();
+
     private final ObjectMapper mapper = new ObjectMapper();
 
     private UiConnection connection;
     private ServiceDirectory directory;
 
+    private MessageCodecContext codecContext;
 
     /**
      * Subclasses must create and return the collection of request handlers
@@ -92,22 +102,19 @@ public abstract class UiMessageHandler {
     public void process(ObjectNode message) {
         String type = JsonUtils.eventType(message);
         ObjectNode payload = JsonUtils.payload(message);
-        // TODO: remove sid
-        exec(type, 0, payload);
+        exec(type, payload);
     }
 
     /**
      * Finds the appropriate handler and executes the process method.
      *
      * @param eventType event type
-     * @param sid       sequence identifier
      * @param payload   message payload
      */
-    // TODO: remove sid from signature
-    void exec(String eventType, long sid, ObjectNode payload) {
+    void exec(String eventType, ObjectNode payload) {
         RequestHandler requestHandler = handlerMap.get(eventType);
         if (requestHandler != null) {
-            requestHandler.process(sid, payload);
+            requestHandler.process(payload);
         } else {
             log.warn("no request handler for event type {}", eventType);
         }
@@ -153,16 +160,16 @@ public abstract class UiMessageHandler {
     }
 
     /**
-     * Returns the user interface connection with which this handler was primed.
+     * Returns the service directory with which this handler was primed.
      *
-     * @return user interface connection
+     * @return service directory
      */
     public ServiceDirectory directory() {
         return directory;
     }
 
     /**
-     * Returns implementation of the specified service class.
+     * Returns an implementation of the specified service class.
      *
      * @param serviceClass service class
      * @param <T>          type of service
@@ -202,6 +209,42 @@ public abstract class UiMessageHandler {
         UiConnection connection = connection();
         if (connection != null) {
             connection.sendMessage(data);
+        }
+    }
+
+    /**
+     * Obtain a CodecContext to be used in encoding and decoding objects
+     * that have a registered JsonCodec for their class.  This method
+     * instantiates a private inner class which is returned on
+     * subsequent calls.
+     *
+     * @return a CodecContext.
+     */
+    protected CodecContext getJsonCodecContext() {
+        if (codecContext != null) {
+            return codecContext;
+        }
+        codecContext = new MessageCodecContext();
+        return codecContext;
+    }
+
+    private class MessageCodecContext implements CodecContext {
+
+        CodecService cs = get(CodecService.class);
+
+        @Override
+        public ObjectMapper mapper() {
+            return mapper;
+        }
+
+        @Override
+        public <T> JsonCodec<T> codec(Class<T> entityClass) {
+            return cs.getCodec(entityClass);
+        }
+
+        @Override
+        public <T> T getService(Class<T> serviceClass) {
+            return get(serviceClass);
         }
     }
 }

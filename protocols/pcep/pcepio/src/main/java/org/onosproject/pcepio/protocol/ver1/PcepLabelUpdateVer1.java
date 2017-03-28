@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Open Networking Laboratory
+ * Copyright 2015-present Open Networking Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -236,7 +236,7 @@ public class PcepLabelUpdateVer1 implements PcepLabelUpdate {
             default:
                 throw new PcepParseException("Unkown FEC object type " + tempObjHeader.getObjType());
             }
-            labelMap.setFECObject(fecObject);
+            labelMap.setFecObject(fecObject);
             pceLabelUpdate.setLabelMap(labelMap);
         } else {
             throw new PcepParseException(
@@ -279,7 +279,7 @@ public class PcepLabelUpdateVer1 implements PcepLabelUpdate {
             }
 
             llLabelList = labelDownload.getLabelList();
-            if (llLabelList == null) {
+            if (llLabelList == null || llLabelList.isEmpty()) {
                 throw new PcepParseException("Label list is mandatory object for Label Download.");
             } else {
                 ListIterator<PcepLabelObject> listIterator = llLabelList.listIterator();
@@ -308,7 +308,7 @@ public class PcepLabelUpdateVer1 implements PcepLabelUpdate {
             } else {
                 labelObject.write(cb);
             }
-            fecObject = labelMap.getFECObject();
+            fecObject = labelMap.getFecObject();
             if (fecObject == null) {
                 throw new PcepParseException("fec Object is mandatory object for Label map.");
             } else {
